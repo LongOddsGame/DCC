@@ -1,6 +1,6 @@
 // Long Odds prototype. Game state, map, battles, bag, safe room and screens.
 import { R, makeRng, newSeed } from './rng.js?v=__BUILD_VERSION__';
-import { BASE_STATS, JOBS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, RECIPES } from './data.js?v=__BUILD_VERSION__';
+import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, RECIPES } from './data.js?v=__BUILD_VERSION__';
 import { generateFloor, tutorialFloor, roomAt, makeGroup, walkable, tileAt, T, key } from './dungeon.js?v=__BUILD_VERSION__';
 import { sprite, heroSprite, docSprite, boxSprite, mobSprite, itemIcon, slotIcon } from './sprites.js?v=__BUILD_VERSION__';
 import { SLOT_COUNT, readSlot, writeSlot, deleteSlot, listSlots } from './save.js?v=__BUILD_VERSION__';
@@ -38,11 +38,13 @@ const isGear = (id) => !!ITEMS[id] && GEAR_SLOTS.includes(ITEMS[id].type);
 
 function race() { return byId(RACES, G.race); }
 function cls() { return byId(CLASSES, G.cls); }
-function job() { return byId(JOBS, G.job); }
+function job() { return byId(JOBS, G.job) || JOBS[0]; }
+function hasPerk(id) { return !!G && (G.perks || []).includes(id); }
+const LEGACY_PERK = { nurse: 'medic', mechanic: 'tinkerer', cook: 'chef', driver: 'quickfeet', bartender: 'charmer', unemployed: 'pity' };
 
 function stats() {
   const s = { ...BASE_STATS };
-  for (const m of [race().mods, cls().mods]) for (const k in m) s[k] += m[k];
+  for (const m of [race().mods, cls().mods, ...(G.perks || []).map((p) => PERKS[p].mods || {})]) for (const k in m) s[k] += m[k];
   const l = G.lvl - 1;
   s.maxHp += l * 6; s.maxMp += l * 3; s.atk += l; s.def += Math.floor(l / 2); s.mag += l;
   for (const slot of GEAR_SLOTS) {
@@ -104,6 +106,7 @@ function addHype(n) {
   let mult = 1;
   if (G.race === 'human') mult *= 1.5;
   if (G.cls === 'showboat') mult *= 1.5;
+  if (hasPerk('ham')) mult *= 1.25;
   if (FL && FL.rule.id === 'hypefest') mult *= 2;
   G.hype += n * mult;
   while (G.hype >= 5) {
@@ -159,10 +162,10 @@ function docMood() {
 }
 
 // ---------- New game, loading, saving ----------
-function newGame(slot, name, jobId, raceId, clsId, tutorial = true) {
+function newGame(slot, name, jobId, raceId, clsId, tutorial = true, perks = []) {
   const seed = newSeed();
   G = {
-    v: 2, slot, name, job: jobId, race: raceId, cls: clsId, seed, floor: tutorial ? 0 : 1,
+    v: 2, slot, name, job: jobId, perks: perks.slice(), race: raceId, cls: clsId, seed, floor: tutorial ? 0 : 1,
     lvl: 1, xp: 0, hp: 0, mp: 0, tokens: 5,
     inv: {}, order: [], favs: {}, equip: emptyEquip(),
     pos: null, moves: [], radar: 0, respawnT: 0, spawnCount: 0, tutSeen: {}, seen: '', shopBought: {},
@@ -171,7 +174,8 @@ function newGame(slot, name, jobId, raceId, clsId, tutorial = true) {
     doc: { trust: 0, fear: 0, respect: 0, owed: 0, met: false, eventDone: false, gift: false, memory: [] },
     sideFx: {}, ach: {}, boxesOpened: 0, deaths: 0, kills: 0, spared: 0, steps: 0, playTime: 0, buff: null,
   };
-  if (jobId === 'bartender') G.doc.trust += 10;
+  if (hasPerk('charmer')) G.doc.trust += 10;
+  if (hasPerk('stash')) { addItem('box_rusty', 2, true); G.tokens += 20; }
   if (raceId === 'goblin') G.doc.trust -= 5;
   if (raceId === 'ghoul') G.doc.fear += 10;
   const s = stats();
@@ -191,7 +195,7 @@ function newGame(slot, name, jobId, raceId, clsId, tutorial = true) {
 function emptyEquip() { const e = {}; for (const sl of GEAR_SLOTS) e[sl] = null; return e; }
 
 function buildFloor() {
-  FL = G.floor === 0 ? tutorialFloor() : generateFloor(G.seed, G.floor, { extraChest: G.job === 'unemployed' });
+  FL = G.floor === 0 ? tutorialFloor() : generateFloor(G.seed, G.floor, { extraChest: hasPerk('pity') });
   mobsLive = FL.mobs.filter((m) => !G.killed.includes(m.id)).map((m) => ({ ...m, stun: m.still ? 1e9 : 0 }));
   SEEN = decodeSeen(G.seen, FL.w * FL.h);
   indexObjects();
@@ -210,6 +214,7 @@ function loadSlot(i) {
   // Bring older saves up to date.
   G.equip = { ...emptyEquip(), ...(G.equip || {}) };
   G.moves = G.moves || [];
+  if (!G.perks) G.perks = LEGACY_PERK[G.job] ? [LEGACY_PERK[G.job]] : [];
   G.radar = G.radar || 0;
   G.respawnT = G.respawnT || 0;
   G.spawnCount = G.spawnCount || 0;
@@ -326,25 +331,30 @@ const overlayHandlers = {
 // ---------- Character creation ----------
 let cr = null;
 function startCreate(slot) {
-  cr = { slot, step: 'who', name: '', job: null, race: 'human', cls: 'brawler' };
+  // Your old job is drawn at random. You choose which of its enhancements to keep.
+  cr = { slot, step: 'who', name: '', job: R.pick(JOBS).id, perks: [], race: 'human', cls: 'brawler' };
   renderCreate();
 }
+function createReady() { return cr.name.trim() && cr.job && cr.perks.length === 2; }
 function renderCreate() {
   const r = byId(RACES, cr.race), c = byId(CLASSES, cr.cls);
   const preview = heroSprite(r, c).toDataURL();
   if (cr.step === 'who') {
+    const job0 = byId(JOBS, cr.job);
     showOverlay(`
       <h2>WHO WERE YOU?</h2>
       <p class="muted">Before the world started ending, you were just a regular person.</p>
       <label for="nm">Your name</label>
       <input id="nm" type="text" maxlength="14" autocomplete="off" value="${esc(cr.name)}" placeholder="Type a name">
       <h2>YOUR OLD JOB</h2>
-      <div class="cards">${JOBS.map((j) => `<button class="card ${cr.job === j.id ? 'sel' : ''}" data-act="job" data-id="${j.id}"><span class="nm">${esc(j.name)}</span><span class="ds">${esc(j.perk)}</span></button>`).join('')}</div>
-      <div class="grid2"><button class="btn grey" data-act="back">BACK</button><button class="btn green" data-act="next" ${cr.name.trim() && cr.job ? '' : 'disabled'}>NEXT</button></div>`);
+      <div class="job-card"><span class="lbl">BOOKIE pulled your file. You used to work as:</span><span class="nm">${esc(job0.name).toUpperCase()}</span><span class="ds">${esc(job0.flavor)}</span></div>
+      <div class="row-between"><h2>PICK 2 ENHANCEMENTS</h2><span class="muted" style="font-size:14px">${cr.perks.length} of 2</span></div>
+      <div class="cards">${job0.perks.map((pid) => `<button class="card ${cr.perks.includes(pid) ? 'sel' : ''}" data-act="perk" data-id="${pid}"><span class="nm">${cr.perks.includes(pid) ? '✓ ' : ''}${esc(PERKS[pid].name)}</span><span class="ds">${esc(PERKS[pid].desc)}</span></button>`).join('')}</div>
+      <div class="grid2"><button class="btn grey" data-act="back">BACK</button><button class="btn green" data-act="next" ${createReady() ? '' : 'disabled'}>NEXT</button></div>`);
     const input = $('nm');
     input.addEventListener('input', () => {
       cr.name = input.value;
-      overlay.querySelector('[data-act=next]').disabled = !(cr.name.trim() && cr.job);
+      overlay.querySelector('[data-act=next]').disabled = !createReady();
     });
   } else if (cr.step === 'intro') {
     showOverlay(`
@@ -376,6 +386,7 @@ function renderCreate() {
       <div class="preview"><img src="${preview}" alt=""><div>
         <p><b>${esc(cr.name.trim())}</b></p>
         <p class="muted" style="font-size:15px">${esc(r.name)} ${esc(c.name)}, former ${esc(j.name.toLowerCase())}</p>
+        <p class="muted" style="font-size:14px">${cr.perks.map((p) => esc(PERKS[p].name)).join(' + ')}</p>
         <p style="color:var(--gold); font-size:15px">Starting odds ${r.odds + c.odds} to 1</p></div></div>
       <div class="bookie"><img src="${sprite('bookie').toDataURL()}" alt=""><p><b style="color:var(--pink)">BOOKIE:</b> ${r.odds + c.odds >= 20 ? 'A long shot! The Patrons love a long shot. Mostly to watch it fail.' : 'A safe pick. Boring, but the Patrons respect a sure thing.'}</p></div>
       <div class="grid2"><button class="btn grey" data-act="back">BACK</button><button class="btn red" data-act="begin">START TUTORIAL</button></div>
@@ -383,7 +394,12 @@ function renderCreate() {
   }
 }
 Object.assign(overlayHandlers, {
-  job: (_, b) => { cr.job = b.dataset.id; renderCreate(); },
+  perk: (_, b) => {
+    const id = b.dataset.id;
+    if (cr.perks.includes(id)) cr.perks = cr.perks.filter((x) => x !== id);
+    else { cr.perks.push(id); if (cr.perks.length > 2) cr.perks.shift(); }
+    renderCreate();
+  },
   race: (_, b) => { cr.race = b.dataset.id; renderCreate(); },
   cls: (_, b) => { cr.cls = b.dataset.id; renderCreate(); },
   next: () => { const steps = ['who', 'intro', 'race', 'class', 'confirm']; cr.step = steps[steps.indexOf(cr.step) + 1]; renderCreate(); },
@@ -393,8 +409,8 @@ Object.assign(overlayHandlers, {
     if (at === 0) return showTitle();
     cr.step = steps[at === 2 ? 0 : at - 1]; renderCreate();
   },
-  begin: () => newGame(cr.slot, cr.name.trim().slice(0, 14), cr.job, cr.race, cr.cls, true),
-  beginskip: () => newGame(cr.slot, cr.name.trim().slice(0, 14), cr.job, cr.race, cr.cls, false),
+  begin: () => newGame(cr.slot, cr.name.trim().slice(0, 14), cr.job, cr.race, cr.cls, true, cr.perks),
+  beginskip: () => newGame(cr.slot, cr.name.trim().slice(0, 14), cr.job, cr.race, cr.cls, false, cr.perks),
 });
 
 function talkDoc() {
@@ -454,8 +470,8 @@ function potionPrice() {
   return G.cls === 'talker' ? Math.max(3, base - 2) : base;
 }
 
-function docMenu() {
-  docGreeting();
+function docMenu(greet = true) {
+  if (greet) docGreeting();
   const hp = healPrice();
   const pp = potionPrice();
   const s = stats();
@@ -466,6 +482,19 @@ function docMenu() {
       updateHud(); docMenuAgain();
     } },
     { label: `Buy a Health Potion (${pp} tokens)`, disabled: G.tokens < pp, fn: () => { G.tokens -= pp; addItem('potion_heal'); updateHud(); docMenuAgain(); } },
+    { label: 'What should I do next?', color: 'purple', fn: () => {
+      const tips = adviceLines();
+      docSay(tips.length ? tips[0] : 'Honestly? You\'re in decent shape. Go find those bosses.');
+      for (const t of tips.slice(1, 3)) docSay(t);
+      docMenuAgain();
+    } },
+    ...(G.doc.taught ? [] : [{ label: G.doc.trust >= 5 ? 'Can you teach me anything?' : 'Can you teach me anything? (she needs to trust you)', disabled: G.doc.trust < 5, fn: () => {
+      G.doc.taught = true;
+      docSay('Fine. Here\'s how I keep people alive down here. Read it somewhere safe.');
+      addItem('scroll_mend');
+      docMenuAgain();
+    } }]),
+    { label: 'Where are the bosses?', fn: () => { docSay('I hear things. Let me mark it for you.'); pointToBoss((t) => docSay(t)); docMenuAgain(); } },
     { label: 'Ask about the show', fn: () => {
       docSay(R.pick([
         'The Patrons bet on everything. How long you last, who you kill, who you save. Don\'t give them a good show for free.',
@@ -477,7 +506,91 @@ function docMenu() {
     { label: 'Leave', color: 'grey', fn: () => save() },
   ]);
 }
-function docMenuAgain() { G.doc.heardLast = true; docMenu(); }
+function docMenuAgain() { G.doc.heardLast = true; docMenu(false); }
+
+// ---------- Hints and BOOKIE's camera booths ----------
+function compass(dx, dy) {
+  const ns = dy < -Math.abs(dx) / 2 ? 'north' : dy > Math.abs(dx) / 2 ? 'south' : '';
+  const ew = dx > Math.abs(dy) / 2 ? 'east' : dx < -Math.abs(dy) / 2 ? 'west' : '';
+  return (ns && ew ? ns + '-' + ew : ns || ew) || 'right here';
+}
+function whereIs(p) {
+  const dx = p.x - G.pos.x, dy = p.y - G.pos.y;
+  return `about ${Math.max(1, Math.round(Math.hypot(dx, dy)))} steps ${compass(dx, dy)}`;
+}
+// Reveals a target on your map and says which way to go.
+function pointToBoss(out) {
+  const left = FL.bosses.filter((b) => !G.bossesDead.includes(b.id));
+  if (FL.tutorial || !left.length) {
+    if (!FL.tutorial) { markRect(FL.stairs.x - 3, FL.stairs.y - 3, 7, 7); out(`Both bosses are down. The stairs are ${whereIs(FL.stairs)}. I marked them on your map.`); }
+    else out('No bosses in practice. Head right to the exit.');
+    return;
+  }
+  const b = left.slice().sort((a, c) => Math.hypot(a.x - G.pos.x, a.y - G.pos.y) - Math.hypot(c.x - G.pos.x, c.y - G.pos.y))[0];
+  const room = roomAt(FL, b.x, b.y);
+  if (room) markRect(room.x - 1, room.y - 1, room.w + 2, room.h + 2); else markRect(b.x - 3, b.y - 3, 7, 7);
+  out(`${BOSSES[b.type].name} is ${whereIs(b)}. It is marked on your map now.`);
+}
+function pointToLoot(out) {
+  const near = FL.chests.filter((c) => !G.opened.includes(c.id)).map((c) => [c, Math.hypot(c.x - G.pos.x, c.y - G.pos.y)]).sort((a, b) => a[1] - b[1]).slice(0, 3);
+  if (!near.length) return out('Picked clean. Not a single chest left on this floor.');
+  for (const [c] of near) markRect(c.x - 2, c.y - 2, 5, 5);
+  out(`${near.length} chest${near.length > 1 ? 's' : ''} marked on your map. The closest is ${whereIs(near[0][0])}.`);
+}
+// Useful next steps based on what the player has right now.
+function adviceLines() {
+  const s = stats();
+  const tips = [];
+  if (G.hp < s.maxHp * 0.4) tips.push('You look rough. Drink a potion or get healed before your next fight.');
+  const boxes = boxCount();
+  if (boxes) tips.push(`You are carrying ${boxes} loot box${boxes > 1 ? 'es' : ''}. You can open them right here: Bag, then Open all.`);
+  const scrolls = G.order.filter((id) => ITEMS[id].type === 'scroll' && count(id) > 0 && !G.moves.includes(ITEMS[id].teaches));
+  if (scrolls.length) tips.push(`You have ${scrolls.length} scroll${scrolls.length > 1 ? 's' : ''} you have not learned. Learn them here in the safe room.`);
+  const ups = upgradeCount();
+  if (ups) tips.push(`You have better gear sitting in your bag. Tap Gear, then Equip best.`);
+  const craftable = RECIPES.filter(canCraft).length;
+  if (craftable) tips.push(`The bench here can make ${craftable} thing${craftable > 1 ? 's' : ''} from your junk right now.`);
+  const junk = G.order.filter((id) => ITEMS[id].type === 'junk').reduce((a, id) => a + count(id) * sellPrice(id), 0);
+  if (junk >= 10) tips.push(`Penny will give you ${junk} tokens for your junk.`);
+  if (!FL.tutorial) {
+    const left = FL.bosses.filter((b) => !G.bossesDead.includes(b.id)).length;
+    tips.push(left ? `${left} boss${left > 1 ? 'es' : ''} still stand between you and the stairs.` : 'Both bosses are down. Find the stairs.');
+  }
+  return tips;
+}
+function boothMenu(at, fresh) {
+  if (fresh) {
+    save();
+    bookie(R.pick(['You found a camera booth! Game saved. Now, what can BOOKIE do for its favorite asset?', 'Booth time! Saved your progress. Ask me anything. Some answers are even true.', 'Saved! Lean in close, the Patrons like a confessional.']));
+  }
+  G.boothGifts = G.boothGifts || [];
+  const giftKey = G.floor + ':' + at;
+  const gifted = G.boothGifts.includes(giftKey);
+  ask(null, [
+    { label: 'Where is the nearest boss?', color: 'red', fn: () => { pointToBoss(bookie); boothMenu(at); } },
+    { label: 'Point me to loot', color: 'gold', fn: () => { pointToLoot(bookie); boothMenu(at); } },
+    { label: 'What should I do next?', color: 'purple', fn: () => {
+      const tips = adviceLines();
+      bookie(tips[0] || 'Go punch something on camera. That is always the answer.');
+      for (const t of tips.slice(1, 3)) say('• ' + esc(t));
+      boothMenu(at);
+    } },
+    { label: gifted ? 'Sponsor gift (already claimed here)' : 'Claim a sponsor gift', color: 'green', disabled: gifted, fn: () => {
+      G.boothGifts.push(giftKey);
+      const roll = R.next() + G.lvl * 0.03;
+      const gift = roll > 0.95 ? 'box_gold' : roll > 0.7 ? 'box_silver' : R.pick(['box_rusty', 'potion_heal', 'potion_radar', 'potion_mana', 'bomb']);
+      bookie(R.pick(['A Patron sponsored this booth! Smile for the logo.', 'This gift brought to you by a billionaire who wants you to suffer slightly less.', 'Sponsor gift! Say thank you to the nice rich person.']));
+      addItem(gift);
+      save();
+      boothMenu(at);
+    } },
+    { label: 'How are my odds?', fn: () => {
+      bookie(`You are at ${oddsText()}. ${G.odds > 15 ? 'Long shot. Win flashy fights to bring that down.' : G.odds > 6 ? 'Respectable. The Patrons are paying attention.' : 'A favorite! Do not let it go to your head.'} Hype fills when you win big, win fast, or nearly die. Full hype means a Patron gift.`);
+      boothMenu(at);
+    } },
+    { label: 'Leave', color: 'grey' },
+  ]);
+}
 
 // ---------- Gear: six slots, stat compare, equip best ----------
 function isEquipped(id) { return GEAR_SLOTS.some((sl) => G.equip[sl] === id); }
@@ -611,9 +724,14 @@ function priceOf(id) {
   let p = it.price || RARITY_PRICE[it.rarity] || 6;
   if (isGear(id) || it.type === 'scroll') p = Math.round(p * 1.25);
   if (G.cls === 'talker') p = Math.max(1, Math.round(p * 0.8));
+  if (hasPerk('haggler')) p = Math.max(1, Math.round(p * 0.85));
   return p;
 }
-function sellPrice(id) { const it = ITEMS[id]; return it.value || Math.max(1, Math.floor((it.price || RARITY_PRICE[it.rarity] || 6) / 2)); }
+function sellPrice(id) {
+  const it = ITEMS[id];
+  const v = it.value || Math.max(1, Math.floor((it.price || RARITY_PRICE[it.rarity] || 6) / 2));
+  return hasPerk('salesman') ? Math.ceil(v * 1.5) : v;
+}
 function stockKey() { return G.floor + ':' + G.lvl; }
 function shopStock() {
   const t = shopTier();
@@ -715,7 +833,7 @@ Object.assign(overlayHandlers, {
 // ---------- Crafting bench: recipes unlock as you level up ----------
 function recipeNeed(r) {
   const need = { ...r.need };
-  if (G.job === 'mechanic') {
+  if (hasPerk('tinkerer')) {
     const junkKeys = Object.keys(need).filter((k) => ITEMS[k].type === 'junk').sort((a, b) => need[b] - need[a]);
     const total = Object.values(need).reduce((a, b) => a + b, 0);
     if (junkKeys.length && total > 1) { need[junkKeys[0]]--; if (!need[junkKeys[0]]) delete need[junkKeys[0]]; }
@@ -744,7 +862,7 @@ function renderBench(extra = '') {
   showOverlay(`
     <div class="row-between"><h2>CRAFTING BENCH</h2><span class="muted" style="font-size:14px">${ready} ready to make</span></div>
     ${extra}
-    <p class="muted" style="font-size:15px">Mobs drop junk. Bash it together into gear, potions and bombs. New recipes unlock as you level up.${G.job === 'mechanic' ? ' Mechanic: every recipe needs one less junk.' : ''}</p>
+    <p class="muted" style="font-size:15px">Mobs drop junk. Bash it together into gear, potions and bombs. New recipes unlock as you level up.${hasPerk('tinkerer') ? ' Tinkerer: every recipe needs one less junk.' : ''}</p>
     <div class="items">${rows}</div>
     <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
 }
@@ -802,7 +920,7 @@ function enterMap(fresh) {
 
 function renderControls() {
   if (prompt) {
-    controls.innerHTML = `<div class="stack">${prompt.choices.map((c, i) => `<button class="btn ${c.color || ''} text" data-p="${i}" ${c.disabled ? 'disabled' : ''}>${esc(c.label)}</button>`).join('')}</div>`;
+    controls.innerHTML = `<div class="stack opts">${prompt.choices.map((c, i) => `<button class="btn ${c.color || ''} text" data-p="${i}" ${c.disabled ? 'disabled' : ''}>${esc(c.label)}</button>`).join('')}</div>`;
     return;
   }
   if (mode === 'map') {
@@ -920,7 +1038,8 @@ function indexObjects() {
   for (const b of FL.bosses) if (!G.bossesDead.includes(b.id)) objIndex.set(key(b), b);
   for (const c of FL.chests) if (!G.opened.includes(c.id)) objIndex.set(key(c), c);
 }
-function objectAt(x, y) { return objIndex.get(x + ',' + y) || null; }
+let lastObjAt = '';
+function objectAt(x, y) { const o = objIndex.get(x + ',' + y) || null; if (o) lastObjAt = x + ',' + y; return o; }
 function mobAt(x, y) { return mobsLive.find((m) => m.x === x && m.y === y); }
 function inSafe() { return tileAt(FL, G.pos.x, G.pos.y) === T.SAFE; }
 
@@ -1038,10 +1157,7 @@ function interactAdjacent() {
 
 function interact(obj) {
   if (obj === 'doc') return talkDoc();
-  if (obj === 'booth') return ask('A BOOKIE camera booth. Save your game here?', [
-    { label: 'Save the game', color: 'green', fn: () => { save(); bookie('Saved! If you die, we rewind to right here. For ratings.'); } },
-    { label: 'Not now', color: 'grey' },
-  ]);
+  if (obj === 'booth') return boothMenu(lastObjAt, true);
   if (obj === 'bench') return openBench();
   if (obj === 'shop') return openShop();
   if (obj.type && BOSSES[obj.type]) {
@@ -1208,8 +1324,8 @@ function consume(id) {
   const s = stats();
   removeItem(id);
   let heal = it.heal || 0;
-  if (it.type === 'potion' && G.job === 'nurse') heal = Math.round(heal * 1.2);
-  if (it.type === 'food' && G.job === 'cook') heal *= 2;
+  if (it.type === 'potion' && hasPerk('medic')) heal = Math.round(heal * 1.2);
+  if (it.type === 'food' && hasPerk('chef')) heal *= 2;
   if (it.type === 'junk') {
     heal = it.edible * (G.race === 'ogre' ? 2 : 1);
     if (G.race !== 'ogre' && G.race !== 'ghoul') tag('creepy');
@@ -1226,7 +1342,7 @@ function consume(id) {
     if (r === 3) { G.hp = Math.max(1, G.hp - 6); say('Ugh. It was mostly drain cleaner. -6 HP.'); }
   }
   if (it.radar) {
-    G.radar = (G.radar > 0 ? G.radar : 0) + it.radar;
+    G.radar = (G.radar > 0 ? G.radar : 0) + it.radar * (hasPerk('nerd') ? 2 : 1);
     say(`<span class="good">Mob Radar on!</span> Every mob shows on your map for ${Math.round(G.radar)} seconds. Pausing stops the clock.`);
   }
   if (heal) { G.hp = Math.min(s.maxHp, G.hp + heal); say(`<span class="good">+${heal} HP</span>`); if (B) popHero('+' + heal, '#6bbf59'); }
@@ -1315,7 +1431,7 @@ function openMenu() {
       <span>Kills <b>${G.kills}</b></span><span>Spared <b>${G.spared}</b></span>
     </div>
     <p><b>Moves:</b> ${esc(moves)}</p>
-    <p><b>Perk:</b> ${esc(job().perk)}</p>
+    <p><b>Enhancements:</b> ${(G.perks || []).map((p) => `${esc(PERKS[p].name)} (${esc(PERKS[p].desc)})`).join(', ') || 'none'}</p>
     <p><b>${esc(race().name)}:</b> ${esc(race().desc)}</p>
     ${FL.tutorial ? '' : `<p><b>Bosses left:</b> ${bossesLeft} of ${FL.bosses.length}. <b>Floor rule:</b> ${esc(FL.rule.name)}. ${esc(FL.rule.text)}</p>`}
     <p>${G.doc.met ? esc(docWords) : FL.tutorial ? 'You will meet people on the real floors.' : 'You have not met anyone yet. Doc works in the safe room closest to the start.'}</p>
@@ -1409,7 +1525,7 @@ function fightOptions() {
   }
   for (const id of G.order) {
     if (count(id) > 0 && ITEMS[id].type === 'bomb') {
-      const mult = G.race === 'gnome' ? 1.5 : 1;
+      const mult = (G.race === 'gnome' ? 1.5 : 1) * (hasPerk('demo') ? 1.3 : 1);
       opts.push({ id: 'bomb:' + id, label: `Throw ${ITEMS[id].name} x${count(id)}`, type: 'BOMB', info: `${Math.round(ITEMS[id].dmg * mult)} dmg to every mob`, target: 'all' });
     }
   }
@@ -1563,7 +1679,7 @@ async function doPlayer(action, targetId) {
     const mid = { x: 160, y: 56 };
     await fly(HERO_C, mid, 'bomb', '#5a5373', 420);
     burst(mid.x, mid.y, 'boom', '#f5c542');
-    const mult = G.race === 'gnome' ? 1.5 : 1;
+    const mult = (G.race === 'gnome' ? 1.5 : 1) * (hasPerk('demo') ? 1.3 : 1);
     for (const e of alive()) hitEnemy(e, it.dmg * mult);
   } else if (action.startsWith('use:')) {
     consume(action.slice(4));
@@ -1750,8 +1866,9 @@ function victory() {
     if (e.spared) { xp += Math.floor(e.xp / 2); continue; }
     xp += e.xp;
     tokens += R.int(e.tokens[0], e.tokens[1]);
-    if (e.drops.length && R.chance(0.45)) drops.push(R.pick(e.drops));
-    if (R.chance(0.2)) drops.push('box_rusty');
+    const scav = hasPerk('scavenger') ? 0.2 : 0;
+    if (e.drops.length && R.chance(0.45 + scav)) drops.push(R.pick(e.drops));
+    if (R.chance(0.2 + scav / 2)) drops.push('box_rusty');
     if (e.elite) { drops.push('box_silver'); achieve('elite'); tag('brave'); }
   }
   const boss = B.enemies.find((e) => e.boss);
@@ -1771,8 +1888,11 @@ function victory() {
   }
   if (G.hp < s.maxHp * 0.25) { addHype(1); G.odds *= 0.97; }
   if (B.turn <= 1) addHype(1);
+  if (hasPerk('tipjar')) tokens += 3;
+  if (hasPerk('learner')) xp = Math.round(xp * 1.25);
+  if (hasPerk('firstaid') && G.hp > 0) G.hp = Math.min(s.maxHp, G.hp + 4);
   G.tokens += tokens;
-  say(`+${xp} XP · +${tokens} tokens`);
+  say(`+${xp} XP · +${tokens} tokens${hasPerk('firstaid') ? ' · +4 HP (First Aid)' : ''}`);
   for (const d of drops) addItem(d);
   for (const id of B.stolen) { addItem(id, 1, true); say(`You got your ${esc(ITEMS[id].name)} back.`); }
   gainXp(xp);
@@ -2050,7 +2170,7 @@ function loop(now) {
       }
       hudTick += dt;
       if (hudTick > 0.5) { hudTick = 0; updateHud(); }
-      const delay = G.job === 'driver' ? 110 : 150;
+      const delay = hasPerk('quickfeet') ? 110 : 150;
       if (moveHeld && now - lastStep > delay) { lastStep = now; tryStep(moveHeld); }
     }
     if (mode === 'map') drawMap();
@@ -2065,3 +2185,11 @@ requestAnimationFrame(loop);
 
 // For automated tests.
 window.__longodds = { get G() { return G; }, get FL() { return FL; }, get mode() { return mode; }, get B() { return B; }, mobsLive: () => mobsLive, seen: (x, y) => seen(x, y) };
+
+// Tapping the mini map opens the full-screen map.
+canvas.addEventListener('click', (e) => {
+  if (mode !== 'map' || !canAct()) return;
+  const r = canvas.getBoundingClientRect();
+  const x = ((e.clientX - r.left) * 240) / r.width, y = ((e.clientY - r.top) * 160) / r.height;
+  if (x >= 240 - 52 - 10 && y <= 34 + 10) openFullMap();
+});

@@ -173,3 +173,8 @@ h3.sub { margin: 4px 0 -6px; font-family: var(--pixel); font-size: 10px; color: 
 #controls > * { flex: none; }
 #controls > .foes { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
 #controls > .opts { flex: 0 1 auto; min-height: 96px; overflow-y: auto; }
+.job-card { display: flex; flex-direction: column; gap: 4px; background: var(--panel); border: 3px solid var(--gold); padding: 12px; text-align: center; }
+.job-card .lbl { font-size: 14px; color: var(--muted); }
+.job-card .nm { font-family: var(--pixel); font-size: 13px; color: var(--gold); line-height: 1.5; }
+.job-card .ds { font-size: 15px; color: var(--paper); }
+#controls > .opts .btn.text { min-height: 40px; padding: 5px 10px; font-size: 15px; }
