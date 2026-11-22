@@ -1,6 +1,6 @@
 // Long Odds prototype. Game state, map, battles, bag, safe room and screens.
 import { R, makeRng, newSeed } from './rng.js?v=__BUILD_VERSION__';
-import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, RECIPES } from './data.js?v=__BUILD_VERSION__';
+import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, GEAR_TYPES, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, RECIPES } from './data.js?v=__BUILD_VERSION__';
 import { generateFloor, tutorialFloor, roomAt, makeGroup, walkable, tileAt, T, key } from './dungeon.js?v=__BUILD_VERSION__';
 import { sprite, heroSprite, flipped, docSprite, boxSprite, mobSprite, itemIcon, slotIcon } from './sprites.js?v=__BUILD_VERSION__';
 import { SLOT_COUNT, readSlot, writeSlot, deleteSlot, listSlots } from './save.js?v=__BUILD_VERSION__';
@@ -42,7 +42,8 @@ let SEEN = null;     // fog of war: 1 = tile discovered
 let objIndex = new Map();
 let FX = { proj: null, pops: [], bursts: [], heroFlash: 0 };
 const icon = (id) => itemIcon(id, ITEMS[id].type, ITEMS[id].rarity);
-const isGear = (id) => !!ITEMS[id] && GEAR_SLOTS.includes(ITEMS[id].type);
+const isGear = (id) => !!ITEMS[id] && GEAR_TYPES.includes(ITEMS[id].type);
+const slotType = (sl) => (sl === 'ring1' || sl === 'ring2' ? 'ring' : sl);
 
 function race() { return byId(RACES, G.race); }
 function cls() { return byId(CLASSES, G.cls); }
@@ -88,7 +89,9 @@ function addItem(id, n = 1, quiet = false) {
 }
 function removeItem(id, n = 1) {
   G.inv[id] = (G.inv[id] || 0) - n;
-  if (G.inv[id] <= 0) { delete G.inv[id]; G.order = G.order.filter((x) => x !== id); for (const sl of GEAR_SLOTS) if (G.equip[sl] === id) G.equip[sl] = null; }
+  if (G.inv[id] <= 0) { delete G.inv[id]; G.order = G.order.filter((x) => x !== id); }
+  // You cannot wear more copies than you own.
+  for (const sl of GEAR_SLOTS.slice().reverse()) if (G.equip[sl] === id && equippedCount(id) > count(id)) G.equip[sl] = null;
 }
 function count(id) { return G.inv[id] || 0; }
 
@@ -251,6 +254,9 @@ function updateHud() {
   $('hp-text').textContent = Math.max(0, Math.round(G.hp));
   $('mp-text').textContent = Math.round(G.mp);
   $('hud-lvl').textContent = G.lvl;
+  const need = G.lvl * 20;
+  $('xp-fill').style.width = clamp((G.xp / need) * 100, 0, 100) + '%';
+  $('xp-text').textContent = G.xp + '/' + need;
   const h = Math.floor(G.hype);
   $('hud-hype').textContent = '▮'.repeat(h) + '▯'.repeat(5 - h);
   $('hud-tokens').textContent = G.tokens;
@@ -660,7 +666,17 @@ overlayHandlers.sponsor = () => {
 };
 
 // ---------- Gear: six slots, stat compare, equip best ----------
-function isEquipped(id) { return GEAR_SLOTS.some((sl) => G.equip[sl] === id); }
+function equippedCount(id) { return GEAR_SLOTS.filter((sl) => G.equip[sl] === id).length; }
+function isEquipped(id) { return equippedCount(id) > 0; }
+function spareCopies(id) { return count(id) - equippedCount(id); }
+// The slot a new item would go in: for rings, an empty ring slot or the weaker ring.
+function compareSlot(id) {
+  const t = ITEMS[id].type;
+  if (t !== 'ring') return t;
+  if (!G.equip.ring1) return 'ring1';
+  if (!G.equip.ring2) return 'ring2';
+  return gearScore(G.equip.ring1) <= gearScore(G.equip.ring2) ? 'ring1' : 'ring2';
+}
 function gearStats(id) {
   const it = id && ITEMS[id];
   const o = {};
@@ -669,7 +685,7 @@ function gearStats(id) {
 }
 // ----- Upgrade table: raise a piece of gear up to +5 -----
 const UPG_MAX = 5;
-const UPG_MAT = { weapon: 'j_wire', wrist: 'j_wire', head: 'j_token', armor: 'j_token', shirt: 'j_feather', shoes: 'j_feather' };
+const UPG_MAT = { weapon: 'j_wire', wrist: 'j_wire', ring: 'j_wire', head: 'j_token', armor: 'j_token', neck: 'j_token', shirt: 'j_feather', shoes: 'j_feather', legs: 'j_feather', back: 'j_feather' };
 function upgLevel(id) { return (G && G.upg && G.upg[id]) || 0; }
 function upgBonus(id, k, lvl) {
   const base = ITEMS[id][k] || 0;
@@ -696,23 +712,23 @@ function statText(id) {
 }
 // The change to each stat if you swapped this in for what you wear now.
 function gearDelta(id) {
-  const a = gearStats(G.equip[ITEMS[id].type]), b = gearStats(id);
+  const a = gearStats(G.equip[compareSlot(id)]), b = gearStats(id);
   const d = {};
   for (const k in STAT_NAMES) { const v = (b[k] || 0) - (a[k] || 0); if (v) d[k] = v; }
   return d;
 }
-const STAT_WEIGHT = { atk: 2, def: 2, mag: 1.5, spd: 1, luck: 0.6, maxHp: 0.35, maxMp: 0.25 };
+const STAT_WEIGHT = { atk: 2, def: 2, mag: 1.5, spd: 1, luck: 0.6, maxHp: 0.35, maxMp: 0.25, xpPct: 0.2 };
 function gearScore(id) {
   if (!id) return 0;
   let t = 0;
   for (const [k, v] of Object.entries(gearStats(id))) t += v * STAT_WEIGHT[k] * (k === 'mag' && G.cls === 'hex' ? 1.5 : 1);
   return t + (ITEMS[id].hype ? 1 : 0);
 }
-function ownedFor(slot) { return G.order.filter((x) => ITEMS[x].type === slot && count(x) > 0); }
-function isUpgrade(id) { return isGear(id) && !isEquipped(id) && gearScore(id) > gearScore(G.equip[ITEMS[id].type]); }
-function upgradeCount() { return GEAR_SLOTS.filter((sl) => ownedFor(sl).some(isUpgrade)).length; }
+function ownedFor(slot) { const t = slotType(slot); return G.order.filter((x) => ITEMS[x].type === t && count(x) > 0); }
+function isUpgrade(id) { return isGear(id) && spareCopies(id) > 0 && gearScore(id) > gearScore(G.equip[compareSlot(id)]); }
+function upgradeCount() { return GEAR_TYPES.filter((t) => ownedFor(t).some(isUpgrade)).length; }
 function deltaHtml(id) {
-  if (isEquipped(id)) return '<span class="delta same">Wearing it now</span>';
+  if (isEquipped(id) && spareCopies(id) <= 0) return '<span class="delta same">Wearing it now</span>';
   const d = gearDelta(id);
   const ks = Object.keys(d);
   if (!ks.length) return '<span class="delta same">Same as now</span>';
@@ -732,8 +748,19 @@ function equipItem(id, slot) {
 function equipBest() {
   let n = 0;
   for (const sl of GEAR_SLOTS) {
+    if (sl === 'ring1' || sl === 'ring2') continue;
     const best = ownedFor(sl).sort((a, b) => gearScore(b) - gearScore(a))[0];
     if (best && gearScore(best) > gearScore(G.equip[sl])) { equipItem(best, sl); n++; }
+  }
+  // Rings: wear the two best copies you own.
+  const copies = ownedFor('ring').flatMap((id) => Array(count(id)).fill(id)).sort((a, b) => gearScore(b) - gearScore(a));
+  const want = [copies[0] || null, copies[1] || null];
+  const have = [G.equip.ring1, G.equip.ring2];
+  if (gearScore(want[0]) + gearScore(want[1]) > gearScore(have[0]) + gearScore(have[1])) {
+    G.equip.ring1 = null; G.equip.ring2 = null;
+    if (want[0]) equipItem(want[0], 'ring1');
+    if (want[1]) equipItem(want[1], 'ring2');
+    n++;
   }
   return n;
 }
@@ -765,7 +792,7 @@ function renderGear(extra = '') {
     ${extra}
     <div class="preview"><img src="${heroSprite(race(), cls()).toDataURL()}" alt=""><div class="stat-list" style="flex:1">
       <span>HP <b>${s.maxHp}</b></span><span>MP <b>${s.maxMp}</b></span><span>ATK <b>${s.atk}</b></span><span>DEF <b>${s.def}</b></span>
-      <span>MAG <b>${s.mag}</b></span><span>SPD <b>${s.spd}</b></span><span>LUCK <b>${s.luck}</b></span></div></div>
+      <span>MAG <b>${s.mag}</b></span><span>SPD <b>${s.spd}</b></span><span>LUCK <b>${s.luck}</b></span>${s.xpPct ? `<span>BONUS XP <b>+${s.xpPct}%</b></span>` : ''}</div></div>
     ${ups ? `<button class="btn gold" data-act="gbest">EQUIP BEST GEAR (${ups} UPGRADE${ups > 1 ? 'S' : ''})</button>` : ''}
     <div class="stack">${rows}</div>
     <button class="btn grey" data-act="gclose" style="position:sticky; bottom:0">${gearState.from === 'bag' ? 'BACK TO BAG' : 'CLOSE'}</button>`);
@@ -773,7 +800,7 @@ function renderGear(extra = '') {
 function renderGearPicker(extra = '') {
   const sl = gearState.slot;
   const cur = G.equip[sl];
-  const ids = ownedFor(sl).sort((a, b) => gearScore(b) - gearScore(a));
+  const ids = ownedFor(sl).filter((id) => id === cur || spareCopies(id) > 0).sort((a, b) => gearScore(b) - gearScore(a));
   const rows = ids.map((id) => {
     const it = ITEMS[id];
     const eq = cur === id;
@@ -792,13 +819,13 @@ function renderGearPicker(extra = '') {
 Object.assign(overlayHandlers, {
   gear: () => openGear('bag'),
   gslot: (_, b) => { gearState.slot = b.dataset.id; renderGear(); },
-  gequip: (_, b) => { const id = b.dataset.id; equipItem(id, ITEMS[id].type); gearState.slot = null; renderGear(`<p class="note good">Equipped ${esc(ITEMS[id].name)}.</p>`); },
-  gunequip: (_, b) => { equipItem(null, ITEMS[b.dataset.id].type); renderGear(); },
+  gequip: (_, b) => { const id = b.dataset.id; equipItem(id, gearState.slot || compareSlot(id)); gearState.slot = null; renderGear(`<p class="note good">Equipped ${esc(ITEMS[id].name)}.</p>`); },
+  gunequip: (_, b) => { equipItem(null, gearState.slot || ITEMS[b.dataset.id].type); renderGear(); },
   gbest: () => { const n = equipBest(); renderGear(`<p class="note good">Equipped ${n} upgrade${n > 1 ? 's' : ''}.</p>`); },
   gback: () => { gearState.slot = null; renderGear(); },
   gclose: () => { if (gearState.from === 'bag') renderBag(); else if (gearState.from === 'shop') renderShop(); else if (gearState.from === 'bench') renderBench(); else { hideOverlay(); renderControls(); } },
   // "Equip it now" shortcut after buying or crafting something better.
-  gquick: (_, b) => { const id = b.dataset.id; equipItem(id, ITEMS[id].type); const back = b.dataset.back; (back === 'bench' ? renderBench : renderShop)(`<p class="note good">Equipped ${esc(ITEMS[id].name)}.</p>`); },
+  gquick: (_, b) => { const id = b.dataset.id; equipItem(id, compareSlot(id)); const back = b.dataset.back; (back === 'bench' ? renderBench : renderShop)(`<p class="note good">Equipped ${esc(ITEMS[id].name)}.</p>`); },
 });
 function equipNowHtml(id, back) {
   if (!isUpgrade(id)) return '';
@@ -812,7 +839,7 @@ const RECIPE_INPUTS = new Set(RECIPES.flatMap((r) => Object.keys(r.need)));
 function knownScroll(id) { return ITEMS[id].type === 'scroll' && G.moves.includes(ITEMS[id].teaches); }
 function isJunk(id) {
   if (knownScroll(id)) return true;
-  return isGear(id) && !isEquipped(id) && !RECIPE_INPUTS.has(id) && gearScore(id) < gearScore(G.equip[ITEMS[id].type]);
+  return isGear(id) && !isEquipped(id) && !RECIPE_INPUTS.has(id) && gearScore(id) < gearScore(G.equip[compareSlot(id)]);
 }
 function junkList() { return G.order.filter((id) => count(id) > 0 && isJunk(id)); }
 // Would buying this make you stronger? Better than any gear you own for that slot, or a move you lack.
@@ -820,12 +847,12 @@ function worthBuying(id) {
   const it = ITEMS[id];
   if (it.type === 'scroll') return !G.moves.includes(it.teaches) && !count(id);
   if (!isGear(id)) return false;
-  const best = Math.max(0, ...ownedFor(it.type).map(gearScore));
-  return gearScore(id) > best;
+  const spare = ownedFor(it.type).filter((x) => spareCopies(x) > 0).map(gearScore);
+  return gearScore(id) > Math.max(gearScore(G.equip[compareSlot(id)]), ...spare);
 }
 // Something in your bag you can use to get stronger right now.
 // The best piece you own for a slot, if it beats what you wear. Only that one is flagged.
-function bestUpgrade(id) { return isUpgrade(id) && gearScore(id) >= Math.max(...ownedFor(ITEMS[id].type).map(gearScore)); }
+function bestUpgrade(id) { return isUpgrade(id) && gearScore(id) >= Math.max(...ownedFor(ITEMS[id].type).filter((x) => spareCopies(x) > 0).map(gearScore)); }
 function actionable(id) {
   const it = ITEMS[id];
   if (bestUpgrade(id)) return true;
@@ -859,9 +886,18 @@ function shopStock() {
   const rng = makeRng(((G.seed ^ (G.floor * 7919) ^ (G.lvl * 104729)) >>> 0) || 1);
   const basics = [], scrolls = [];
   for (let i = 0; i <= t; i++) { basics.push(...SHOP_TIERS[i].basics); scrolls.push(...SHOP_TIERS[i].scrolls.filter((sc) => !G.moves.includes(ITEMS[sc].teaches))); }
-  const gearOf = (r) => Object.keys(ITEMS).filter((id) => isGear(id) && ITEMS[id].rarity === r);
-  let specials = rng.shuffle(gearOf(SHOP_TIERS[t].rarity)).slice(0, 4);
-  if (t > 0) specials = specials.concat(rng.shuffle(gearOf(SHOP_TIERS[t - 1].rarity)).slice(0, 2));
+  // Every level shifts the odds toward rarer gear and adds more specials.
+  const L = G.lvl;
+  const weights = { rusty: Math.max(1, 10 - 2 * L), silver: L >= 2 ? Math.min(10, 2 * L) : 0, gold: L >= 4 ? (L - 3) * 2 : 0, patron: L >= 7 ? (L - 6) * 2 : 0 };
+  const total = Object.values(weights).reduce((a, b) => a + b, 0);
+  const pool = Object.keys(ITEMS).filter((id) => isGear(id) && weights[ITEMS[id].rarity]);
+  let specials = [];
+  for (let tries = 0; specials.length < Math.min(9, 4 + Math.floor(L / 2)) && tries < 80; tries++) {
+    let roll = rng.next() * total, rar = 'rusty';
+    for (const [r, w] of Object.entries(weights)) { roll -= w; if (roll <= 0) { rar = r; break; } }
+    const pick = rng.pick(pool.filter((id) => ITEMS[id].rarity === rar && !specials.includes(id)));
+    if (pick) specials.push(pick);
+  }
   specials = specials.concat(rng.shuffle(scrolls).slice(0, 2));
   return { basics, specials };
 }
@@ -903,7 +939,7 @@ function renderShop(extra = '') {
       <h3 class="sub">SUPPLIES</h3><div class="items">${st.basics.map((id) => shopRow(id, false, bought)).join('')}</div>
       ${rest.length ? `<h3 class="sub">OTHER SPECIALS: ONE OF EACH</h3><div class="items">${rest.map((id) => shopRow(id, true, bought)).join('')}</div>` : ''}`;
   } else {
-    const ids = G.order.filter((id) => count(id) > 0 && !(isEquipped(id) && count(id) === 1)).sort((a, b) => isJunk(b) - isJunk(a));
+    const ids = G.order.filter((id) => spareCopies(id) > 0).sort((a, b) => isJunk(b) - isJunk(a));
     const junk = junkList();
     const jv = junk.reduce((a, id) => a + count(id) * sellPrice(id), 0);
     body = `${junk.length ? `<button class="btn gold" data-act="selljunk">SELL ALL JUNK: ${junk.reduce((a, id) => a + count(id), 0)} ITEMS FOR ${jv} TOKENS</button>` : ''}
@@ -920,7 +956,7 @@ function renderShop(extra = '') {
     <div class="row-between"><h2>PENNY'S PAWN</h2><span class="tok">${G.tokens} tokens</span></div>
     <div class="bookie"><img src="${sprite('shop').toDataURL()}" alt=""><p><b style="color:var(--gold)">PENNY:</b> ${esc(shopState.line)}</p></div>
     ${extra}
-    <p class="muted" style="font-size:15px">Shop level ${t + 1} of ${SHOP_TIERS.length}. ${next ? `Better stock unlocks when you reach level ${next.lvl}.` : 'The top shelf is open.'} Specials restock when you level up or reach a new floor.</p>
+    <p class="muted" style="font-size:15px">Penny restocks every time you level up or reach a new floor, and her gear gets rarer with each level you gain. ${next ? `New supplies and scrolls unlock at level ${next.lvl}.` : 'Every shelf is open.'}</p>
     <div class="tabs"><button class="tab ${shopState.tab === 'buy' ? 'on' : ''}" data-act="shoptab" data-id="buy">Buy</button><button class="tab ${shopState.tab === 'sell' ? 'on' : ''}" data-act="shoptab" data-id="sell">Sell</button><button class="tab" data-act="shopgear">My gear</button></div>
     ${body}
     <button class="btn grey" data-act="shopclose" style="position:sticky; bottom:0">LEAVE SHOP</button>`);
@@ -940,7 +976,7 @@ Object.assign(overlayHandlers, {
   },
   sell: (_, b) => {
     const id = b.dataset.id;
-    if (!count(id) || (isEquipped(id) && count(id) === 1)) return;
+    if (spareCopies(id) <= 0) return;
     G.tokens += sellPrice(id);
     removeItem(id);
     updateHud();
@@ -1477,8 +1513,8 @@ function itemAction(id) {
     if (G.moves.includes(it.teaches)) return [null, false, 'Already known. Sell it to Penny as junk.'];
     return safe ? ['Learn', true] : ['Learn', false, 'Safe room only'];
   }
-  if (it.type === 'potion' || it.type === 'food') return ['Use', true];
-  if (isGear(id)) return [G.equip[it.type] === id ? 'Unequip' : 'Equip', true];
+  if (it.type === 'potion' || it.type === 'food') { const w = potionWait(id); return w ? ['Use', false, w] : ['Use', true]; }
+  if (isGear(id)) return [spareCopies(id) > 0 ? 'Equip' : 'Unequip', true];
   if (it.type === 'junk' && it.edible) return ['Eat', true];
   if (it.type === 'bomb') return [null, false, 'Throw it in a fight'];
   return [null, false];
@@ -1523,8 +1559,10 @@ function useItemFromBag(id) {
   const it = ITEMS[id];
   if (it.type === 'box') return openBox(id);
   if (it.type === 'scroll') return learnScroll(id);
+  if (potionWait(id)) return renderBag();
   if (isGear(id)) {
-    equipItem(G.equip[it.type] === id ? null : id, it.type);
+    if (spareCopies(id) > 0) equipItem(id, compareSlot(id));
+    else equipItem(null, GEAR_SLOTS.filter((sl) => G.equip[sl] === id).pop());
     return renderBag();
   }
   consume(id);
@@ -1547,6 +1585,7 @@ function learnScroll(id) {
 // Drinking or eating an item.
 function consume(id) {
   const it = ITEMS[id];
+  if (cooled(id)) { if (B) B.lastPotion = B.turn; else G.potionCd = POTION_CD; }
   const s = stats();
   removeItem(id);
   let heal = it.heal || 0;
@@ -1585,6 +1624,15 @@ function consume(id) {
     if (fx.defBuff) setBuff('def', fx.defBuff);
     if (fx.spdBuff) setBuff('spd', fx.spdBuff);
   }
+}
+// Potion cooldown: 15 seconds of play on the map, or once every 2 turns in a fight.
+// Mob Radar is not a drink for healing, so it has no cooldown.
+const POTION_CD = 15;
+function cooled(id) { return ITEMS[id].type === 'potion' && !ITEMS[id].radar; }
+function potionWait(id) {
+  if (!cooled(id)) return '';
+  if (B) { const t = 2 - (B.turn - (B.lastPotion ?? -99)); return t > 0 ? `Ready in ${t} turn${t > 1 ? 's' : ''}` : ''; }
+  return G.potionCd > 0 ? `Ready in ${Math.ceil(G.potionCd)}s` : '';
 }
 function setBuff(stat, n) {
   if (B) { B.buff[stat] = (B.buff[stat] || 0) + n; }
@@ -1774,7 +1822,7 @@ function renderBattleControls() {
     btns = `<p class="muted" style="margin:0">Who gets the ${esc(B.pendingLabel)}?</p><div class="stack opts">${alive().map((e) => `<button class="btn red text" data-b="target" data-arg="${e.id}">${esc(e.full)} (${e.hp} HP)</button>`).join('')}</div><button class="btn grey" data-b="back">BACK</button>`;
   } else if (B.phase === 'items') {
     const usable = G.order.filter((id) => count(id) > 0 && ['potion', 'food'].includes(ITEMS[id].type)).sort((a, b) => (G.favs[b] ? 1 : 0) - (G.favs[a] ? 1 : 0));
-    btns = `<div class="stack opts">${usable.map((id) => `<button class="btn green text" data-b="use" data-arg="${id}">${G.favs[id] ? '★ ' : ''}${ITEMS[id].type === 'food' ? 'EAT' : 'DRINK'} ${esc(ITEMS[id].name)} x${count(id)}</button>`).join('') || '<p class="muted">No potions or food. Bombs are under Attack.</p>'}</div><button class="btn grey" data-b="back">BACK</button>`;
+    btns = `<div class="stack opts">${usable.map((id) => { const w = potionWait(id); return `<button class="btn green text" data-b="use" data-arg="${id}" ${w ? 'disabled' : ''}>${G.favs[id] ? '★ ' : ''}${ITEMS[id].type === 'food' ? 'EAT' : 'DRINK'} ${esc(ITEMS[id].name)} x${count(id)}${w ? ` (${w})` : ''}</button>`; }).join('') || '<p class="muted">No potions or food. Bombs are under Attack.</p>'}</div><button class="btn grey" data-b="back">BACK</button>`;
   } else if (B.phase === 'mercy') {
     btns = `<div class="grid2"><button class="btn green" data-b="spare">SPARE IT</button><button class="btn red" data-b="finish">FINISH IT</button></div>`;
   } else if (B.phase === 'busy') {
@@ -1805,7 +1853,7 @@ function battleInput(cmd, arg) {
     return doPlayer(o.id, null);
   }
   if (cmd === 'target') return doPlayer(B.pending, Number(arg));
-  if (cmd === 'use') return doPlayer('use:' + arg, null);
+  if (cmd === 'use') { if (potionWait(arg)) return; return doPlayer('use:' + arg, null); }
   if (cmd === 'guard') return doPlayer('guard', null);
   if (cmd === 'run') return doPlayer('run', null);
   if (cmd === 'spare' || cmd === 'finish') return resolveMercy(cmd);
@@ -2119,6 +2167,7 @@ function victory() {
   if (B.turn <= 1) addHype(1);
   if (hasPerk('tipjar')) tokens += 3;
   if (hasPerk('learner')) xp = Math.round(xp * 1.25);
+  if (s.xpPct) xp = Math.round(xp * (1 + s.xpPct / 100));
   if (hasPerk('firstaid') && G.hp > 0) G.hp = Math.min(s.maxHp, G.hp + 4);
   G.tokens += tokens;
   say(`+${xp} XP · +${tokens} tokens${hasPerk('firstaid') ? ' · +4 HP (First Aid)' : ''}`);
@@ -2411,6 +2460,7 @@ function loop(now) {
   if (mode === 'map' && G && FL) {
     if (canAct()) {
       G.playTime += dt;
+      if (G.potionCd > 0) G.potionCd = Math.max(0, G.potionCd - dt);
       if (G.radar > 0) {
         G.radar -= dt;
         if (G.radar <= 0) { G.radar = 0; say('Your Mob Radar wore off.'); updateHud(); }

@@ -26,6 +26,10 @@ const MAPS = {
   bracer: ['................', '................', '................', '....kkkkkkkk....', '...kbbbbbbbbk...', '...kByyBByybk...', '...kbbbbbbbbk...', '...kByyBByybk...', '...kbbbbbbbbk...', '....kkkkkkkk....', '................', '................', '................', '................', '................', '................'],
   boot: ['................', '................', '.....kkkk.......', '.....kbbk.......', '.....kbBk.......', '.....kbBk.......', '.....kbbk.......', '.....kbbk.......', '.....kbbkkkk....', '.....kbbbbbbk...', '.....kbbbbbbbk..', '.....kyyyyyyyk..', '.....kkkkkkkkk..', '................', '................', '................'],
   shop: ['................', '..kkkkkkkkkkkk..', '.knnnnnnnnnnnnk.', '.knwnwnwnwnwnnk.', '.kkkkkkkkkkkkkk.', '.koooooooooooOk.', '.kocckcckcckoOk.', '.kocckcckcckoOk.', '.koooooooooooOk.', '.koyykggkrrkoOk.', '.koooooooooooOk.', '.kokkkkkkkkkkok.', '.kowwwwwwwwwwok.', '.kokkkkkkkkkkok.', '.kkkkkkkkkkkkkk.', '..kk........kk..'],
+  amulet: ['................', '....kk....kk....', '.....k....k.....', '......k..k......', '.......kk.......', '.......kk.......', '......kyyk......', '.....kybByk.....', '.....kbBbbk.....', '.....kbbbbk.....', '......kbbk......', '.......kk.......', '................', '................', '................', '................'],
+  ring: ['................', '................', '................', '......kkkk......', '.....kbBBbk.....', '......kbbk......', '....kkkkkkkk....', '...kyyyyyyyyk...', '..kyk......kyk..', '..kyk......kyk..', '..kyk......kyk..', '...kyyyyyyyyk...', '....kkkkkkkk....', '................', '................', '................'],
+  pants: ['................', '................', '...kkkkkkkkkk...', '...kbbbbbbbbk...', '...kyyyyyyyyk...', '...kbbbbbbbbk...', '...kbBbkkbBbk...', '...kbBbkkbBbk...', '...kbBbkkbBbk...', '...kbbbkkbbbk...', '...kbbbkkbbbk...', '...kbbbkkbbbk...', '..kkkkkk.kkkkk..', '................', '................', '................'],
+  cape: ['................', '.....kkkkkk.....', '....kyyyyyyk....', '...kbbbbbbbbk...', '...kbBbbbbbbk...', '..kbbBbbbbbbbk..', '..kbbBbbbbbbbk..', '..kbbbbbbbbbbk..', '.kbbbbbbbbbbbbk.', '.kbbbbbbbbbbbbk.', '.kbbbbbbbbbbbbk.', 'kbbbbbbbbbbbbbbk', 'kkkkkkkkkkkkkkkk', '................', '................', '................'],
   stairs: ['kkkkkkkkkkkkkkkk', 'kOOOOOOOOOOOOOOk', 'kkkkkkkkkkkkkkkk', 'kooooooooooooook', 'kkkkkkkkkkkkkkkk', 'k.oooooooooooo.k', 'kkkkkkkkkkkkkkkk', 'k..oooooooooo..k', 'kkkkkkkkkkkkkkkk', 'k...oooooooo...k', 'kkkkkkkkkkkkkkkk', 'k....oooooo....k', 'kkkkkkkkkkkkkkkk', 'k.....kkkk.....k', 'k..............k', 'kkkkkkkkkkkkkkkk'],
 };
 
@@ -131,7 +135,7 @@ const GEAR_TINT = {
   gold: { b: '#b8862b', B: '#f5c542', y: '#fff6e0' },
   patron: { b: '#8a4fc9', B: '#c49af0', y: '#ff5fa2' },
 };
-const SLOT_SPRITE = { head: 'hat', shirt: 'shirt', wrist: 'bracer', shoes: 'boot' };
+const SLOT_SPRITE = { head: 'hat', shirt: 'shirt', wrist: 'bracer', shoes: 'boot', neck: 'amulet', ring: 'ring', ring1: 'ring', ring2: 'ring', legs: 'pants', back: 'cape' };
 export function slotIcon(slot) {
   const name = SLOT_SPRITE[slot] || (slot === 'weapon' ? 'sword' : 'vest');
   return sprite(name, { b: '#3d3550', B: '#5a5373', y: '#3d3550', k: '#5a5373', w: '#5a5373', O: '#3d3550', Y: '#3d3550' }, 'empty').toDataURL();

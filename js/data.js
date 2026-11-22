@@ -1,6 +1,6 @@
 // All game content for the Floor 1 prototype: jobs, races, classes, items, mobs and lines.
 
-export const BASE_STATS = { maxHp: 40, maxMp: 12, atk: 6, def: 3, mag: 5, spd: 5, luck: 5 };
+export const BASE_STATS = { maxHp: 40, maxMp: 12, atk: 6, def: 3, mag: 5, spd: 5, luck: 5, xpPct: 0 };
 
 // Enhancements. Your old job is drawn at random, then you pick 2 of the 4 it offers.
 export const PERKS = {
@@ -151,6 +151,27 @@ export const ITEMS = {
   f_sneaks: { name: 'Running Sneakers', type: 'shoes', rarity: 'silver', spd: 2, def: 1, desc: 'Good arch support for the apocalypse.' },
   f_boots: { name: 'Steel Toe Boots', type: 'shoes', rarity: 'gold', spd: 1, def: 4, desc: 'Kick things with confidence.' },
   f_loafers: { name: "Patron's Gold Loafers", type: 'shoes', rarity: 'patron', spd: 4, def: 3, desc: 'No socks. Never socks.' },
+  // Neck: luck, magic and bonus XP. Rings: a bit of everything, wear two. Legs: defense and HP. Back: speed.
+  n_lanyard: { name: 'Staff Lanyard', type: 'neck', rarity: 'common', def: 1, luck: 1, desc: 'ALL ACCESS. To nothing.' },
+  n_whistle: { name: 'Safety Whistle', type: 'neck', rarity: 'rusty', luck: 2, maxHp: 4, desc: 'One blast scares rats. Sometimes.' },
+  n_locket: { name: "Scholar's Locket", type: 'neck', rarity: 'silver', mag: 2, xpPct: 10, desc: 'A tiny photo of a library inside.' },
+  n_chain: { name: 'Gold Chain', type: 'neck', rarity: 'gold', atk: 2, luck: 3, xpPct: 5, hype: true, desc: 'Heavy, shiny and very on camera.' },
+  n_pendant: { name: "Patron's Pearl Pendant", type: 'neck', rarity: 'patron', mag: 4, maxMp: 10, xpPct: 20, desc: 'Learn faster, look richer.' },
+  g_washer: { name: 'Washer Ring', type: 'ring', rarity: 'common', def: 1, desc: 'A hardware store washer. Fits fine.' },
+  g_mood: { name: 'Mood Ring', type: 'ring', rarity: 'rusty', mag: 1, luck: 1, desc: 'Currently: terrified.' },
+  g_class: { name: 'Class Ring', type: 'ring', rarity: 'silver', atk: 1, xpPct: 8, desc: 'Class of the year the world ended.' },
+  g_signet: { name: 'Silver Signet', type: 'ring', rarity: 'silver', atk: 1, def: 2, desc: 'Stamped with a stranger\'s crest.' },
+  g_ruby: { name: 'Ruby Ring', type: 'ring', rarity: 'gold', atk: 3, maxHp: 8, desc: 'Glows when you are angry.' },
+  g_band: { name: "Patron's Platinum Band", type: 'ring', rarity: 'patron', atk: 3, def: 3, luck: 3, xpPct: 10, desc: 'Worth more than the floor you found it on.' },
+  l_bags: { name: 'Trash Bag Pants', type: 'legs', rarity: 'common', def: 1, maxHp: 2, desc: 'Crinkly but waterproof.' },
+  l_shorts: { name: 'Gym Shorts', type: 'legs', rarity: 'rusty', spd: 1, maxHp: 4, desc: 'Never skip leg day.' },
+  l_jeans: { name: 'Ripped Jeans', type: 'legs', rarity: 'silver', def: 2, maxHp: 6, desc: 'Ripped by a mob, not a designer.' },
+  l_cargo: { name: 'Cargo Pants', type: 'legs', rarity: 'gold', def: 3, maxHp: 10, luck: 1, desc: 'So many pockets. No inventory limit anyway.' },
+  l_tux: { name: "Patron's Tux Trousers", type: 'legs', rarity: 'patron', def: 4, spd: 2, maxHp: 14, desc: 'Pressed by a butler who cried.' },
+  k_towel: { name: 'Beach Towel Cape', type: 'back', rarity: 'rusty', spd: 1, luck: 1, desc: 'Always know where your towel is.' },
+  k_tarp: { name: 'Blue Tarp Cloak', type: 'back', rarity: 'silver', def: 1, spd: 2, desc: 'Rustles heroically.' },
+  k_cape: { name: 'Showbiz Cape', type: 'back', rarity: 'gold', spd: 2, mag: 2, hype: true, desc: 'Sequins on both sides.' },
+  k_mink: { name: "Patron's Mink Stole", type: 'back', rarity: 'patron', spd: 3, def: 3, maxMp: 8, desc: 'Fur from an animal that never existed.' },
   j_token: { name: 'Bent Subway Token', type: 'junk', rarity: 'common', value: 2, desc: 'Crafting material for the bench.' },
   j_wire: { name: 'Loose Wires', type: 'junk', rarity: 'common', value: 2, desc: 'Crafting material for the bench.' },
   j_jelly: { name: 'Slime Jelly', type: 'junk', rarity: 'common', value: 3, edible: 6, desc: 'Crafting material. Technically edible.' },
@@ -171,10 +192,10 @@ export const ITEMS = {
 
 // What each loot box tier can hold. [itemId, weight, minCount, maxCount]
 export const LOOT = {
-  box_rusty: [['potion_heal', 5, 1, 2], ['food_pretzel', 4, 1, 3], ['food_hotdog', 2, 1, 1], ['bomb', 3, 1, 2], ['potion_mystery', 2, 1, 1], ['w_pipe', 1, 1, 1], ['a_vest', 1, 1, 1], ['j_wire', 3, 1, 2], ['potion_mana', 2, 1, 1], ['potion_radar', 2, 1, 1], ['scroll_venom', 1, 1, 1], ['scroll_iron', 1, 1, 1], ['h_cap', 1, 1, 1], ['s_tee', 1, 1, 1], ['r_band', 1, 1, 1], ['f_flops', 1, 1, 1], ['j_feather', 2, 1, 2]],
-  box_silver: [['potion_heal', 4, 2, 3], ['potion_big', 3, 1, 1], ['potion_mana', 3, 1, 2], ['bomb', 3, 2, 3], ['w_bar', 2, 1, 1], ['a_jacket', 2, 1, 1], ['potion_mystery', 2, 1, 2], ['box_rusty', 1, 1, 2], ['potion_radar', 2, 1, 2], ['scroll_frost', 1, 1, 1], ['scroll_mend', 1, 1, 1], ['scroll_leech', 1, 1, 1], ['h_hardhat', 1, 1, 1], ['s_flannel', 1, 1, 1], ['r_watch', 1, 1, 1], ['f_sneaks', 1, 1, 1], ['h_cap', 1, 1, 1], ['s_tee', 1, 1, 1]],
-  box_gold: [['potion_big', 4, 1, 2], ['bomb_big', 3, 1, 2], ['w_mic', 2, 1, 1], ['a_suit', 2, 1, 1], ['box_silver', 2, 1, 1], ['potion_mana', 3, 2, 3], ['scroll_fireball', 2, 1, 1], ['scroll_frost', 1, 1, 1], ['potion_radar', 1, 2, 2], ['h_tiara', 1, 1, 1], ['s_jersey', 1, 1, 1], ['r_cuffs', 1, 1, 1], ['f_boots', 1, 1, 1], ['s_flannel', 1, 1, 1]],
-  box_patron: [['w_bat', 2, 1, 1], ['a_coat', 2, 1, 1], ['potion_big', 3, 2, 3], ['bomb_big', 3, 1, 2], ['box_gold', 1, 1, 1], ['potion_mystery', 2, 3, 4], ['scroll_lightning', 2, 1, 1], ['scroll_fireball', 1, 1, 1], ['h_crown', 1, 1, 1], ['s_silk', 1, 1, 1], ['r_bangle', 1, 1, 1], ['f_loafers', 1, 1, 1]],
+  box_rusty: [['potion_heal', 5, 1, 2], ['food_pretzel', 4, 1, 3], ['food_hotdog', 2, 1, 1], ['bomb', 3, 1, 2], ['potion_mystery', 2, 1, 1], ['w_pipe', 1, 1, 1], ['a_vest', 1, 1, 1], ['j_wire', 3, 1, 2], ['potion_mana', 2, 1, 1], ['potion_radar', 2, 1, 1], ['scroll_venom', 1, 1, 1], ['scroll_iron', 1, 1, 1], ['h_cap', 1, 1, 1], ['s_tee', 1, 1, 1], ['r_band', 1, 1, 1], ['f_flops', 1, 1, 1], ['j_feather', 2, 1, 2], ['n_whistle', 1, 1, 1], ['g_mood', 1, 1, 1], ['l_shorts', 1, 1, 1], ['k_towel', 1, 1, 1]],
+  box_silver: [['potion_heal', 4, 2, 3], ['potion_big', 3, 1, 1], ['potion_mana', 3, 1, 2], ['bomb', 3, 2, 3], ['w_bar', 2, 1, 1], ['a_jacket', 2, 1, 1], ['potion_mystery', 2, 1, 2], ['box_rusty', 1, 1, 2], ['potion_radar', 2, 1, 2], ['scroll_frost', 1, 1, 1], ['scroll_mend', 1, 1, 1], ['scroll_leech', 1, 1, 1], ['h_hardhat', 1, 1, 1], ['s_flannel', 1, 1, 1], ['r_watch', 1, 1, 1], ['f_sneaks', 1, 1, 1], ['h_cap', 1, 1, 1], ['s_tee', 1, 1, 1], ['n_locket', 1, 1, 1], ['g_class', 1, 1, 1], ['g_signet', 1, 1, 1], ['l_jeans', 1, 1, 1], ['k_tarp', 1, 1, 1]],
+  box_gold: [['potion_big', 4, 1, 2], ['bomb_big', 3, 1, 2], ['w_mic', 2, 1, 1], ['a_suit', 2, 1, 1], ['box_silver', 2, 1, 1], ['potion_mana', 3, 2, 3], ['scroll_fireball', 2, 1, 1], ['scroll_frost', 1, 1, 1], ['potion_radar', 1, 2, 2], ['h_tiara', 1, 1, 1], ['s_jersey', 1, 1, 1], ['r_cuffs', 1, 1, 1], ['f_boots', 1, 1, 1], ['s_flannel', 1, 1, 1], ['n_chain', 1, 1, 1], ['g_ruby', 1, 1, 1], ['l_cargo', 1, 1, 1], ['k_cape', 1, 1, 1]],
+  box_patron: [['w_bat', 2, 1, 1], ['a_coat', 2, 1, 1], ['potion_big', 3, 2, 3], ['bomb_big', 3, 1, 2], ['box_gold', 1, 1, 1], ['potion_mystery', 2, 3, 4], ['scroll_lightning', 2, 1, 1], ['scroll_fireball', 1, 1, 1], ['h_crown', 1, 1, 1], ['s_silk', 1, 1, 1], ['r_bangle', 1, 1, 1], ['f_loafers', 1, 1, 1], ['n_pendant', 1, 1, 1], ['g_band', 1, 1, 1], ['l_tux', 1, 1, 1], ['k_mink', 1, 1, 1]],
 };
 export const BOX_TOKENS = { box_rusty: [3, 8], box_silver: [8, 16], box_gold: [18, 30], box_patron: [25, 50] };
 
@@ -265,9 +286,11 @@ export const BOOKIE = {
 };
 
 // ---------- Gear ----------
-export const GEAR_SLOTS = ['weapon', 'head', 'shirt', 'armor', 'wrist', 'shoes'];
-export const SLOT_NAMES = { weapon: 'Weapon', head: 'Head', shirt: 'Shirt', armor: 'Armor', wrist: 'Wrist', shoes: 'Shoes' };
-export const STAT_NAMES = { atk: 'ATK', def: 'DEF', mag: 'MAG', spd: 'SPD', luck: 'LUCK', maxHp: 'HP', maxMp: 'MP' };
+// Slots you can wear things in. Both ring slots take items of type 'ring'.
+export const GEAR_SLOTS = ['weapon', 'head', 'neck', 'shirt', 'armor', 'back', 'wrist', 'ring1', 'ring2', 'legs', 'shoes'];
+export const GEAR_TYPES = ['weapon', 'head', 'neck', 'shirt', 'armor', 'back', 'wrist', 'ring', 'legs', 'shoes'];
+export const SLOT_NAMES = { weapon: 'Weapon', head: 'Head', neck: 'Neck', shirt: 'Shirt', armor: 'Armor', back: 'Back', wrist: 'Wrist', ring: 'Ring', ring1: 'Ring 1', ring2: 'Ring 2', legs: 'Legs', shoes: 'Shoes' };
+export const STAT_NAMES = { atk: 'ATK', def: 'DEF', mag: 'MAG', spd: 'SPD', luck: 'LUCK', maxHp: 'HP', maxMp: 'MP', xpPct: 'XP%' };
 
 // Shop prices by rarity when an item has no price of its own. Selling pays half.
 export const RARITY_PRICE = { common: 6, rusty: 12, silver: 28, gold: 60, patron: 110 };
@@ -287,6 +310,9 @@ export const RECIPES = [
   { out: 'food_hotdog', lvl: 1, need: { j_tail: 2 } },
   { out: 'h_foil', lvl: 1, need: { j_wire: 2, j_token: 1 } },
   { out: 'r_tape', lvl: 1, need: { j_wire: 1, j_tail: 1 } },
+  { out: 'g_washer', lvl: 1, need: { j_wire: 1, j_token: 2 } },
+  { out: 'l_bags', lvl: 2, need: { j_jelly: 1, j_wire: 1 } },
+  { out: 'n_lanyard', lvl: 2, need: { j_wire: 2, j_feather: 1 } },
   { out: 'potion_radar', lvl: 2, need: { j_feather: 2, j_wire: 1 } },
   { out: 'potion_mana', lvl: 2, need: { j_jelly: 1, j_feather: 1 } },
   { out: 's_patch', lvl: 2, need: { j_feather: 2, j_jelly: 1 } },
