@@ -14,11 +14,18 @@ const MAPS = {
   gremlin: ['................', '..k..........k..', '..kk........kk..', '..kgk.kkkk.kgk..', '...kgkggggkgk...', '....kggggggk....', '...kgwkggkwgk...', '...kgkkggkkgk...', '...kggggggggk...', '....kgrrrrgk....', '...kkkggggkkk...', '..kyykYYYYkyyk..', '..kgkYyyyYkgk...', '....kYYYYk......', '....kgk.kgk.....', '....kk...kk.....'],
   pigeon: ['................', '.....kkkk.......', '....kOOOOk......', '...kOOkwOOk.....', '...kOOOOOOkyy...', '....kOOOOOkk....', '...kooooooOk....', '..kooOOooooOk...', '..koOOOOoooook..', '..kooOOOooooook.', '...kooooooooook.', '....kkkooookkk..', '......kyk.kyk...', '......kk..kk....', '................', '................'],
   king: ['..ky.ky.ky.ky...', '..kyykyykyykyk..', '..kyyyyyyyyyyk..', '..kkkkkkkkkkkk..', '.kOOOOOOOOOOOOk.', '.kOkkkOOOOkkkOk.', '.kOkrkOOOOkrkOk.', '.kOkkkOOOOkkkOk.', '.kOOOOOOOOOOOOk.', '.kOOkkkkkkkkOOk.', '.kOOkwkwkwkkOOk.', '.kOOkkkkkkkkOOk.', '.kooooooooooook.', '.kokk.kokk.kkok.', '.kok..kok...kok.', '.kkk..kkk...kkk.'],
+  hoarder: ['................', '......kkkk......', '.....kOOOOk.....', '....kOkOOkOk....', '....kOyOOyOk....', '.....kOOOOk.kk..', '...kkkuuuukkyyk.', '..kuuuUuuuUkyYk.', '..kuUuuuuuukkyk.', '..kuuuuuuuuk.k..', '...kuuuUuuuk....', '...kuuuuuuuk....', '....kuuuuuk.....', '....kOk.kOk.....', '....kkk.kkk.....', '................'],
+  scroll: ['................', '..kkkkkkkkkkkk..', '.kUeeeeeeeeeeUk.', '.kkeeeeeeeeeekk.', '..keoooooooeek..', '..keeeeeeeeeek..', '..keoooooeeeek..', '..keeeeeeeeeek..', '..keooooooooek..', '..keeeeeeeeeek..', '..keeeeeeerrek..', '.kkeeeeeeerrekk.', '.kUeeeeeeeeeeUk.', '..kkkkkkkkkkkk..', '................', '................'],
   bookie: ['................', '....k......k....', '.....k....k.....', '......k..k......', '..kkkkkkkkkkkk..', '.kooooooooooook.', '.kokkkkkkkkkkok.', '.kokcccccccckok.', '.kokckcccckckok.', '.kokcccccccckok.', '.kokcnnnnnnckok.', '.kokcckkkkcckok.', '.kokkkkkkkkkkok.', '.koooooooooOook.', '.kkkkkkkkkkkkkk.', '..kk........kk..'],
   potion: ['................', '......kkkk......', '......kYYk......', '......kkkk......', '.......kk.......', '......kOOk......', '.....kOOOOk.....', '....krrrrrrk....', '...krwrrrrrrk...', '...krwrrrrrrk...', '...krrrrrrrRk...', '...krrrrrrRRk...', '....krrrrRRk....', '.....kkkkkk.....', '................', '................'],
   box: ['................', '................', '................', '..kkkkkkkkkkkk..', '.kAAAAAAAAAAAAk.', '.kaaaaaaaaaaaak.', '.kaaaaaaaaaaaak.', '.kkkkkkLLkkkkkk.', '.kaaaaLkkLaaaak.', '.kaaaaaLLaaaaak.', '.kaaaaaaaaaaaak.', '.kaaaaaaaaaaaak.', '.kaaaaaaaaaaaak.', '.kkkkkkkkkkkkkk.', '................', '................'],
   sword: ['................', '.............kk.', '............kwk.', '...........kwOk.', '..........kwOk..', '.........kwOk...', '........kwOk....', '.......kwOk.....', '..kk..kwOk......', '..kYkkwOk.......', '...kYYOk........', '....kYYk........', '...kYkkYk.......', '..kYk..kk.......', '..kk............', '................'],
   vest: ['................', '...kkk....kkk...', '..kbbbk..kbbbk..', '.kbbbbbkkbbbbbk.', '.kbBbbbbbbbbBbk.', '.kbBbbbbbbbbBbk.', '..kkbbbbbbbbkk..', '...kbyybbyybk...', '...kbbbbbbbbk...', '...kbbbbbbbbk...', '...kbyybbyybk...', '...kbbbbbbbbk...', '...kkkkkkkkkk...', '................', '................', '................'],
+  hat: ['................', '................', '................', '.....kkkkkk.....', '....kbbbbbbk....', '...kbBbbbbbbk...', '...kbBbbbbbbk...', '...kyyyyyyyyk...', '..kkkkkkkkkkkk..', '.kbbbbbbbbbbbbk.', '..kkkkkkkkkkkk..', '................', '................', '................', '................', '................'],
+  shirt: ['................', '...kkkk..kkkk...', '..kbbbbkkbbbbk..', '.kbbbbbbbbbbbbk.', 'kbbBbbbbbbbbBbbk', 'kbbkbbbbbbbbkbbk', '.kk.kbbbbbbk.kk.', '....kbbybbbk....', '....kbbbbbbk....', '....kbbbbbbk....', '....kbbbbbbk....', '....kkkkkkkk....', '................', '................', '................', '................'],
+  bracer: ['................', '................', '................', '....kkkkkkkk....', '...kbbbbbbbbk...', '...kByyBByybk...', '...kbbbbbbbbk...', '...kByyBByybk...', '...kbbbbbbbbk...', '....kkkkkkkk....', '................', '................', '................', '................', '................', '................'],
+  boot: ['................', '................', '.....kkkk.......', '.....kbbk.......', '.....kbBk.......', '.....kbBk.......', '.....kbbk.......', '.....kbbk.......', '.....kbbkkkk....', '.....kbbbbbbk...', '.....kbbbbbbbk..', '.....kyyyyyyyk..', '.....kkkkkkkkk..', '................', '................', '................'],
+  shop: ['................', '..kkkkkkkkkkkk..', '.knnnnnnnnnnnnk.', '.knwnwnwnwnwnnk.', '.kkkkkkkkkkkkkk.', '.koooooooooooOk.', '.kocckcckcckoOk.', '.kocckcckcckoOk.', '.koooooooooooOk.', '.koyykggkrrkoOk.', '.koooooooooooOk.', '.kokkkkkkkkkkok.', '.kowwwwwwwwwwok.', '.kokkkkkkkkkkok.', '.kkkkkkkkkkkkkk.', '..kk........kk..'],
   stairs: ['kkkkkkkkkkkkkkkk', 'kOOOOOOOOOOOOOOk', 'kkkkkkkkkkkkkkkk', 'kooooooooooooook', 'kkkkkkkkkkkkkkkk', 'k.oooooooooooo.k', 'kkkkkkkkkkkkkkkk', 'k..oooooooooo..k', 'kkkkkkkkkkkkkkkk', 'k...oooooooo...k', 'kkkkkkkkkkkkkkkk', 'k....oooooo....k', 'kkkkkkkkkkkkkkkk', 'k.....kkkk.....k', 'k..............k', 'kkkkkkkkkkkkkkkk'],
 };
 
@@ -77,6 +84,7 @@ const POTION_COLORS = {
   potion_big: { r: '#ff5fa2', R: '#c8334a' },
   potion_mana: { r: '#4fd8e8', R: '#3a6ea5' },
   potion_mystery: { r: '#c49af0', R: '#8a4fc9' },
+  potion_radar: { r: '#ff5fa2', R: '#8a4fc9', w: '#4fd8e8' },
 };
 
 const ARMOR_COLORS = {
@@ -86,17 +94,33 @@ const ARMOR_COLORS = {
   a_coat: { b: '#8a4fc9', B: '#c49af0', y: '#fff6e0' },
 };
 
+// Gear for the new slots is tinted by rarity.
+const GEAR_TINT = {
+  common: { b: '#8b84a3', B: '#c9c3da', y: '#5a5373' },
+  rusty: { b: '#8a4b2a', B: '#b8693a', y: '#f5c542' },
+  silver: { b: '#3a6ea5', B: '#6aa0d8', y: '#e8dcc0' },
+  gold: { b: '#b8862b', B: '#f5c542', y: '#fff6e0' },
+  patron: { b: '#8a4fc9', B: '#c49af0', y: '#ff5fa2' },
+};
+const SLOT_SPRITE = { head: 'hat', shirt: 'shirt', wrist: 'bracer', shoes: 'boot' };
+export function slotIcon(slot) {
+  const name = SLOT_SPRITE[slot] || (slot === 'weapon' ? 'sword' : 'vest');
+  return sprite(name, { b: '#3d3550', B: '#5a5373', y: '#3d3550', k: '#5a5373', w: '#5a5373', O: '#3d3550', Y: '#3d3550' }, 'empty').toDataURL();
+}
+
 // Small icon for an inventory item, as a data URL for <img> tags.
 const iconCache = new Map();
-export function itemIcon(id, type) {
+export function itemIcon(id, type, rarity = 'common') {
   if (iconCache.has(id)) return iconCache.get(id);
   let c;
   if (type === 'box') c = boxSprite(id);
+  else if (type === 'scroll') c = sprite('scroll', null, 'scroll');
   else if (type === 'potion') c = sprite('potion', POTION_COLORS[id], id);
   else if (type === 'bomb') c = sprite('potion', { r: '#5a5373', R: '#1a1426', Y: '#ff5fa2', w: '#8b84a3' }, id);
   else if (type === 'food') c = sprite('potion', { r: '#b8693a', R: '#8a4b2a', O: '#f5c542', Y: '#c8334a' }, id);
   else if (type === 'weapon') c = sprite('sword', null, id);
-  else if (type === 'armor') c = sprite('vest', ARMOR_COLORS[id], id);
+  else if (type === 'armor') c = sprite('vest', ARMOR_COLORS[id] || GEAR_TINT[rarity], id);
+  else if (SLOT_SPRITE[type]) c = sprite(SLOT_SPRITE[type], GEAR_TINT[rarity], id);
   else c = sprite('potion', { r: '#5b3a29', R: '#1a1426', O: '#5a5373' }, id);
   const url = c.toDataURL();
   iconCache.set(id, url);
