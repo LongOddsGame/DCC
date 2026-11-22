@@ -1426,12 +1426,12 @@ function renderBattleControls() {
       <button class="btn" data-b="guard">GUARD</button>
       <button class="btn grey" data-b="run" ${B.enemies.some((e) => e.boss) ? 'disabled' : ''}>RUN</button></div>`;
   } else if (B.phase === 'fight') {
-    btns = `<div class="stack" style="max-height:250px; overflow-y:auto">${fightOptions().map((o) => `<button class="btn red text fight-opt" data-b="act" data-arg="${o.id}" ${o.mp && G.mp < o.mp ? 'disabled' : ''}><span class="ftype">${esc(o.type)}</span> <b>${esc(o.label)}</b><br><span class="finfo">${esc(o.info)}</span></button>`).join('')}</div><button class="btn grey" data-b="back">BACK</button>`;
+    btns = `<div class="stack opts">${fightOptions().map((o) => `<button class="btn red text fight-opt" data-b="act" data-arg="${o.id}" ${o.mp && G.mp < o.mp ? 'disabled' : ''}><span class="ftype">${esc(o.type)}</span> <b>${esc(o.label)}</b><br><span class="finfo">${esc(o.info)}</span></button>`).join('')}</div><button class="btn grey" data-b="back">BACK</button>`;
   } else if (B.phase === 'target') {
-    btns = `<p class="muted" style="margin:0">Who gets the ${esc(B.pendingLabel)}?</p><div class="stack">${alive().map((e) => `<button class="btn red text" data-b="target" data-arg="${e.id}">${esc(e.full)} (${e.hp} HP)</button>`).join('')}<button class="btn grey" data-b="back">BACK</button></div>`;
+    btns = `<p class="muted" style="margin:0">Who gets the ${esc(B.pendingLabel)}?</p><div class="stack opts">${alive().map((e) => `<button class="btn red text" data-b="target" data-arg="${e.id}">${esc(e.full)} (${e.hp} HP)</button>`).join('')}</div><button class="btn grey" data-b="back">BACK</button>`;
   } else if (B.phase === 'items') {
     const usable = G.order.filter((id) => count(id) > 0 && ['potion', 'food'].includes(ITEMS[id].type)).sort((a, b) => (G.favs[b] ? 1 : 0) - (G.favs[a] ? 1 : 0));
-    btns = `<div class="stack" style="max-height:220px; overflow-y:auto">${usable.map((id) => `<button class="btn green text" data-b="use" data-arg="${id}">${G.favs[id] ? '★ ' : ''}${ITEMS[id].type === 'food' ? 'EAT' : 'DRINK'} ${esc(ITEMS[id].name)} x${count(id)}</button>`).join('') || '<p class="muted">No potions or food. Bombs are under Attack.</p>'}</div><button class="btn grey" data-b="back">BACK</button>`;
+    btns = `<div class="stack opts">${usable.map((id) => `<button class="btn green text" data-b="use" data-arg="${id}">${G.favs[id] ? '★ ' : ''}${ITEMS[id].type === 'food' ? 'EAT' : 'DRINK'} ${esc(ITEMS[id].name)} x${count(id)}</button>`).join('') || '<p class="muted">No potions or food. Bombs are under Attack.</p>'}</div><button class="btn grey" data-b="back">BACK</button>`;
   } else if (B.phase === 'mercy') {
     btns = `<div class="grid2"><button class="btn green" data-b="spare">SPARE IT</button><button class="btn red" data-b="finish">FINISH IT</button></div>`;
   } else if (B.phase === 'busy') {
@@ -1439,7 +1439,9 @@ function renderBattleControls() {
   } else if (B.phase === 'end') {
     btns = '<button class="btn green" data-b="continue">CONTINUE</button>';
   }
-  controls.innerHTML = foes + btns;
+  // The mob list only shows on the main menu screens, so action lists always have room.
+  const showFoes = ['menu', 'mercy', 'busy', 'end'].includes(B.phase);
+  controls.innerHTML = (showFoes ? foes : '') + btns;
 }
 
 function battleInput(cmd, arg) {

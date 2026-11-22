@@ -169,3 +169,7 @@ label { font-size: 15px; color: var(--muted); }
 .note { margin: 0; font-size: 15px; } .note.good { color: var(--green); }
 h3.sub { margin: 4px 0 -6px; font-family: var(--pixel); font-size: 10px; color: var(--gold); }
 .tok { font-family: var(--pixel); font-size: 10px; color: var(--gold); }
+/* Battle lists scroll instead of getting squeezed off screen */
+#controls > * { flex: none; }
+#controls > .foes { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
+#controls > .opts { flex: 0 1 auto; min-height: 96px; overflow-y: auto; }
