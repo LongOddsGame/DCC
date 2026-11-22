@@ -1865,11 +1865,13 @@ function victory() {
   for (const e of B.enemies) {
     if (e.spared) { xp += Math.floor(e.xp / 2); continue; }
     xp += e.xp;
-    tokens += R.int(e.tokens[0], e.tokens[1]);
-    const scav = hasPerk('scavenger') ? 0.2 : 0;
-    if (e.drops.length && R.chance(0.45 + scav)) drops.push(R.pick(e.drops));
-    if (R.chance(0.2 + scav / 2)) drops.push('box_rusty');
-    if (e.elite) { drops.push('box_silver'); achieve('elite'); tag('brave'); }
+    tokens += R.int(e.tokens[0], e.tokens[1]) + 1;
+    // Every mob drops something. Extra rolls for a bonus item and a loot box.
+    const scav = hasPerk('scavenger') ? 0.15 : 0;
+    if (e.drops.length) drops.push(R.pick(e.drops));
+    if (R.chance(0.4 + scav)) { const bonus = rollLoot(G.lvl >= 5 ? 'box_silver' : 'box_rusty').items[0]; if (bonus) for (let n = 0; n < bonus[1]; n++) drops.push(bonus[0]); }
+    if (R.chance(0.3 + scav)) drops.push(G.lvl >= 6 && R.chance(0.3) ? 'box_silver' : 'box_rusty');
+    if (e.elite) { drops.push('box_silver', rollLoot('box_gold').items[0][0]); achieve('elite'); tag('brave'); }
   }
   const boss = B.enemies.find((e) => e.boss);
   say('<span class="good">Victory!</span>');
@@ -1893,7 +1895,9 @@ function victory() {
   if (hasPerk('firstaid') && G.hp > 0) G.hp = Math.min(s.maxHp, G.hp + 4);
   G.tokens += tokens;
   say(`+${xp} XP · +${tokens} tokens${hasPerk('firstaid') ? ' · +4 HP (First Aid)' : ''}`);
-  for (const d of drops) addItem(d);
+  const merged = {};
+  for (const d of drops) merged[d] = (merged[d] || 0) + 1;
+  for (const [d, n] of Object.entries(merged)) addItem(d, n);
   for (const id of B.stolen) { addItem(id, 1, true); say(`You got your ${esc(ITEMS[id].name)} back.`); }
   gainXp(xp);
   if (B.mob) {

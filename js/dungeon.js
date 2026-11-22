@@ -97,13 +97,13 @@ export function generateFloor(seed, floor, opts = {}) {
     { id: 'b2', type: 'hoarder', x: boss2Room.cx, y: boss2Room.cy },
   ];
 
-  // 5. Lots of safe rooms: one right next to the start, then one roughly every 35 tiles.
+  // 5. Lots of safe rooms: one right next to the start, then one roughly every 75 tiles.
   const safeRooms = [];
   const near = others.slice().sort((a, b) => rd(a) - rd(b));
   safeRooms.push(near[0]);
   for (const r of rng.shuffle(others)) {
     if (r === bossRoom || r === boss2Room || safeRooms.includes(r)) continue;
-    if (safeRooms.every((s) => Math.abs(s.cx - r.cx) + Math.abs(s.cy - r.cy) > 35)) safeRooms.push(r);
+    if (safeRooms.every((s) => Math.abs(s.cx - r.cx) + Math.abs(s.cy - r.cy) > 75)) safeRooms.push(r);
   }
   for (const sr of safeRooms) for (let yy = sr.y; yy < sr.y + sr.h; yy++) for (let xx = sr.x; xx < sr.x + sr.w; xx++) set(xx, yy, T.SAFE);
   const safeRoom = safeRooms[0];
