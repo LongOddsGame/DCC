@@ -5,6 +5,7 @@ import { generateFloor, tutorialFloor, roomAt, makeGroup, walkable, tileAt, T, k
 import { sprite, heroSprite, flipped, docSprite, boxSprite, mobSprite, itemIcon, slotIcon } from './sprites.js?v=__BUILD_VERSION__';
 import { SLOT_COUNT, readSlot, writeSlot, deleteSlot, listSlots } from './save.js?v=__BUILD_VERSION__';
 import { VERSION, checkForUpdate, installUpdate } from './version.js?v=__BUILD_VERSION__';
+import { SUGGEST_KEY } from './config.js?v=__BUILD_VERSION__';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('game');
@@ -290,6 +291,7 @@ function showTitle() {
   const upd = titleState.update
     ? `<button class="btn gold" data-act="install">Install update ${esc(titleState.update)}</button>`
     : `<button class="btn" data-act="update">CHECK FOR UPDATES</button>`;
+  const sugBtn = `<button class="btn purple" data-act="suggest">SUGGESTIONS BOX</button>`;
   showOverlay(`
     <div style="padding-top:14px; display:flex; flex-direction:column; gap:10px; align-items:center">
       <img src="${sprite('bookie').toDataURL()}" alt="" style="width:64px;height:64px;image-rendering:pixelated">
@@ -300,6 +302,7 @@ function showTitle() {
     <div class="stack">${rows}</div>
     <div class="foot">${upd}
       <span class="muted" style="font-size:14px; min-height:18px">${esc(titleState.updateMsg)}</span>
+      ${sugBtn}
       <span class="version">Build ${esc(VERSION)}</span>
     </div>`);
 }
@@ -1159,7 +1162,7 @@ window.addEventListener('pointercancel', release);
 
 const KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right' };
 window.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT') return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (KEYS[e.key] && mode === 'map') {
     e.preventDefault();
     if (e.repeat) return;
@@ -1628,6 +1631,7 @@ function openMenu() {
     <p class="muted">The game saves when you walk into a safe room or use a camera booth.</p>
     <button class="btn green" data-act="closebag">RESUME</button>
     ${FL.tutorial ? '<button class="btn" data-act="skiptut">SKIP THE TUTORIAL</button>' : ''}
+    <button class="btn purple" data-act="suggest">SUGGESTIONS BOX</button>
     <button class="btn grey" data-act="quit">QUIT TO TITLE (LOSES PROGRESS SINCE LAST SAVE)</button>
     <span class="version" style="text-align:center">Build ${esc(VERSION)}</span>`);
 }
@@ -2408,3 +2412,84 @@ canvas.addEventListener('click', (e) => {
   const x = ((e.clientX - r.left) * 240) / r.width, y = ((e.clientY - r.top) * 160) / r.height;
   if (x >= 240 - 52 - 10 && y <= 34 + 10) openFullMap();
 });
+
+// ---------- Suggestions box ----------
+// Players send ideas and bug reports. Web3Forms emails them to the game owner without
+// showing the owner's address. If sending fails or no key is set yet, the suggestion
+// waits on this device and is sent next time the game opens.
+const SUG_QUEUE = 'longodds.suggestions';
+let sugState = { from: 'title', msg: '', kind: 'Idea' };
+function sugQueue() { try { return JSON.parse(localStorage.getItem(SUG_QUEUE) || '[]'); } catch { return []; } }
+function setSugQueue(q) { try { localStorage.setItem(SUG_QUEUE, JSON.stringify(q)); } catch { /* storage blocked */ } }
+async function sendSuggestion(sg) {
+  if (!SUGGEST_KEY) return false;
+  try {
+    const r = await fetch('https://api.web3forms.com/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        access_key: SUGGEST_KEY,
+        subject: `Long Odds ${sg.kind}: ${sg.text.slice(0, 50)}`,
+        from_name: sg.name || 'A Long Odds player',
+        kind: sg.kind,
+        message: sg.text,
+        player: sg.name || '(no name given)',
+        build: sg.build,
+        where: sg.where,
+        sent: sg.at,
+        botcheck: '',
+      }),
+    });
+    const j = await r.json().catch(() => ({}));
+    return r.ok && j.success !== false;
+  } catch { return false; }
+}
+async function flushSuggestions() {
+  const q = sugQueue();
+  if (!q.length || !SUGGEST_KEY) return;
+  const left = [];
+  for (const sg of q) if (!(await sendSuggestion(sg))) left.push(sg);
+  setSugQueue(left);
+}
+function openSuggest(from) {
+  sugState = { ...sugState, from, msg: '' };
+  renderSuggest();
+}
+function renderSuggest() {
+  const kinds = ['Idea', 'Bug', 'Balance', 'Other'];
+  showOverlay(`
+    <h2>SUGGESTIONS BOX</h2>
+    <div class="bookie"><img src="${sprite('bookie').toDataURL()}" alt=""><p><b style="color:var(--pink)">BOOKIE:</b> Got an idea, a bug, or a complaint about the odds? It goes straight to the people who make this show.</p></div>
+    <label>What kind?</label>
+    <div class="tabs">${kinds.map((k) => `<button class="tab ${sugState.kind === k ? 'on' : ''}" data-act="sugkind" data-id="${k}">${k}</button>`).join('')}</div>
+    <label for="sugtext">Your suggestion</label>
+    <textarea id="sugtext" maxlength="1500" rows="6" placeholder="Tell us what you'd add, change or fix.">${esc(sugState.draft || '')}</textarea>
+    <label for="sugname">Your name (optional)</label>
+    <input id="sugname" type="text" maxlength="30" autocomplete="off" value="${esc(sugState.name || '')}" placeholder="Leave blank to stay anonymous">
+    ${sugState.msg ? `<p class="note ${sugState.ok ? 'good' : ''}">${esc(sugState.msg)}</p>` : ''}
+    <div class="grid2"><button class="btn grey" data-act="sugback">BACK</button><button class="btn green" data-act="sugsend">SEND</button></div>`);
+  const ta = $('sugtext'), nm = $('sugname');
+  ta.addEventListener('input', () => { sugState.draft = ta.value; });
+  nm.addEventListener('input', () => { sugState.name = nm.value; });
+}
+Object.assign(overlayHandlers, {
+  suggest: () => openSuggest(mode === 'map' ? 'menu' : 'title'),
+  sugkind: (_, b) => { sugState.kind = b.dataset.id; renderSuggest(); },
+  sugback: () => { sugState.msg = ''; if (sugState.from === 'menu') openMenu(); else showTitle(); },
+  sugsend: async (_, b) => {
+    const text = (sugState.draft || '').trim();
+    if (text.length < 3) { sugState.msg = 'Write a little more first.'; sugState.ok = false; return renderSuggest(); }
+    b.disabled = true; b.textContent = 'SENDING...';
+    const sg = {
+      kind: sugState.kind, text, name: (sugState.name || '').trim(), build: VERSION, at: new Date().toISOString(),
+      where: G ? `${G.floor === 0 ? 'Tutorial' : 'Floor ' + G.floor}, level ${G.lvl} ${race().name} ${cls().name}` : 'Title screen',
+    };
+    const sent = await sendSuggestion(sg);
+    if (!sent) setSugQueue(sugQueue().concat(sg));
+    sugState.draft = '';
+    sugState.ok = true;
+    sugState.msg = sent ? 'Sent! Thank you. Every suggestion gets read.' : 'Saved! It will be sent automatically the next time you open the game.';
+    renderSuggest();
+  },
+});
+flushSuggestions();
