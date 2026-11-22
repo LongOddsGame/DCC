@@ -144,9 +144,22 @@ label { font-size: 15px; color: var(--muted); }
 @media (max-height: 700px) { .dpad { grid-template-columns: repeat(3, 46px); grid-auto-rows: 46px; } .btn-a { width: 58px; height: 58px; } .btn-b { width: 50px; height: 50px; } #textbox { min-height: 60px; max-height: 90px; } }
 
 /* Fight submenu */
-.fight-opt { text-align: left; line-height: 1.2; min-height: 44px; padding: 5px 10px; }
-.ftype { display: inline-block; font-family: var(--pixel); font-size: 8px; padding: 2px 4px; background: var(--ink); color: var(--gold); vertical-align: middle; }
-.finfo { font-size: 13px; color: #ffd6e0; }
+#controls > .opts > * { flex-shrink: 0; }
+.fight-opt { display: flex; align-items: center; gap: 10px; text-align: left; line-height: 1.2; min-height: 46px; padding: 4px 10px; }
+#textbox.picking { display: none; }
+.fight-opt.mana { background: #5a2d8c; }
+.fight-opt:disabled { opacity: 0.45; }
+.fmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ftop { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.ftop b { margin-right: 2px; }
+.ftype, .fmp, .fall { display: inline-block; font-family: var(--pixel); font-size: 8px; padding: 2px 4px; background: var(--ink); color: var(--gold); }
+.fmp { color: var(--cyan); } .fall { color: #ff8a8a; }
+.fight-opt b { font-size: 16px; }
+.finfo { font-size: 13px; color: #ffd6e0; white-space: normal; }
+.fdmg { flex: none; min-width: 52px; text-align: center; font-family: var(--pixel); font-size: 16px; color: var(--paper); display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.fdmg small { font-size: 7px; color: #ffd6e0; }
+.fdmg.util { font-size: 9px; color: #b8e05a; line-height: 1.4; }
+.opt-head { font-family: var(--pixel); font-size: 9px; color: var(--cyan); padding: 4px 2px 0; }
 
 /* Gear, shop and bench */
 .small-row { gap: 6px; }
@@ -212,3 +225,12 @@ textarea { width: 100%; font-family: var(--body); font-size: 18px; line-height: 
 .fill.xp { background: var(--gold); }
 .bar-num.wide { width: auto; min-width: 54px; color: var(--gold); }
 .tabs-lbl { align-self: center; font-size: 14px; color: var(--muted); }
+/* Character sheet */
+.sheet { display: flex; flex-direction: column; gap: 6px; }
+.sheet-row { background: var(--panel); border: 2px solid var(--edge2); padding: 6px 10px; display: flex; flex-direction: column; gap: 2px; }
+.sheet-top { display: flex; justify-content: space-between; align-items: baseline; }
+.sheet-nm { font-size: 17px; font-weight: 600; } .sheet-nm small { font-size: 12px; color: var(--muted); font-weight: 400; }
+.sheet-val { font-family: var(--pixel); font-size: 14px; color: var(--gold); }
+.sheet-what { font-size: 13px; color: var(--muted); }
+.sheet-src { font-size: 13px; display: flex; flex-wrap: wrap; gap: 0 8px; color: var(--paper); }
+.sheet-src .up { color: var(--green); } .sheet-src .down { color: #ff8a8a; }

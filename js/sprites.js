@@ -76,6 +76,27 @@ for (let f = 0; f < 3; f++) {
   MAPS['hero_up' + f] = withLegs(HERO_BACK, LEGS.front[f]);
   MAPS['hero_left' + f] = withLegs(HERO_SIDE, LEGS.side[f]);
 }
+// Female variants: long hair that falls past the shoulders.
+function longHair(rows, cols) {
+  const out = rows.slice();
+  for (let y = 4; y <= 9; y++) {
+    const r = out[y].split('');
+    for (const [hx, kx] of cols) {
+      if (r[hx] === '.' || (y >= 4 && r[hx] === 'k' && y < 8)) r[hx] = 'h';
+      if (r[kx] === '.') r[kx] = 'k';
+    }
+    out[y] = r.join('');
+  }
+  const last = out[10].split('');
+  for (const [hx] of cols) if (last[hx] === '.') last[hx] = 'k';
+  out[10] = last.join('');
+  return out;
+}
+for (let f = 0; f < 3; f++) {
+  MAPS['heroF_down' + f] = longHair(MAPS['hero_down' + f], [[2, 1], [13, 14]]);
+  MAPS['heroF_up' + f] = longHair(MAPS['hero_up' + f], [[2, 1], [13, 14]]).map((r, y) => (y === 7 ? '....khhhhhhk....' : r));
+  MAPS['heroF_left' + f] = longHair(MAPS['hero_left' + f], [[12, 13]]);
+}
 function mirror(c) {
   const m = document.createElement('canvas');
   m.width = 16; m.height = 16;
@@ -89,10 +110,10 @@ export function flipped(c) {
   return mirrorCache.get(c);
 }
 // dir: down | up | left | right. frame: 0 standing, 1 and 2 mid-step.
-export function heroSprite(race, cls, dir = 'down', frame = 0) {
+export function heroSprite(race, cls, dir = 'down', frame = 0, sex = 'm') {
   const over = { s: race.skin, S: race.shade, h: race.hair || '#5b3a29', b: cls.coat, B: cls.coatLight };
   const base = dir === 'right' ? 'left' : dir;
-  const c = sprite('hero_' + base + frame, over, race.id + cls.id);
+  const c = sprite((sex === 'f' ? 'heroF_' : 'hero_') + base + frame, over, race.id + cls.id);
   return dir === 'right' ? flipped(c) : c;
 }
 

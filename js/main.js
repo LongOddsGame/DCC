@@ -1,6 +1,6 @@
 // Long Odds prototype. Game state, map, battles, bag, safe room and screens.
 import { R, makeRng, newSeed } from './rng.js?v=__BUILD_VERSION__';
-import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, GEAR_TYPES, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, RECIPES } from './data.js?v=__BUILD_VERSION__';
+import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, GEAR_TYPES, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, RECIPES, SCHOOL_NAMES } from './data.js?v=__BUILD_VERSION__';
 import { generateFloor, tutorialFloor, roomAt, makeGroup, walkable, tileAt, T, key } from './dungeon.js?v=__BUILD_VERSION__';
 import { sprite, heroSprite, flipped, docSprite, boxSprite, mobSprite, itemIcon, slotIcon } from './sprites.js?v=__BUILD_VERSION__';
 import { SLOT_COUNT, readSlot, writeSlot, deleteSlot, listSlots } from './save.js?v=__BUILD_VERSION__';
@@ -48,6 +48,11 @@ const slotType = (sl) => (sl === 'ring1' || sl === 'ring2' ? 'ring' : sl);
 function race() { return byId(RACES, G.race); }
 function cls() { return byId(CLASSES, G.cls); }
 function job() { return byId(JOBS, G.job) || JOBS[0]; }
+// Charisma: 5 is average. Each point above it makes the crowd, shops and people warmer.
+function chaBonus() { return Math.max(-5, Math.min(15, stats().cha - 5)); }
+function chaMult() { return 1 + chaBonus() * 0.03; }
+// Some classes can't learn whole schools of spells.
+function canLearn(scrollId) { const mv = MOVES[ITEMS[scrollId].teaches]; return !mv || !(cls().cannot || []).includes(mv.school); }
 function hasPerk(id) { return !!G && (G.perks || []).includes(id); }
 const LEGACY_PERK = { nurse: 'medic', mechanic: 'tinkerer', cook: 'chef', driver: 'quickfeet', bartender: 'charmer', unemployed: 'pity' };
 
@@ -116,7 +121,8 @@ function addHype(n) {
   if (n <= 0) return;
   let mult = 1;
   if (G.race === 'human') mult *= 1.5;
-  if (G.cls === 'showboat') mult *= 1.5;
+  if (cls().hypeUp) mult *= 1.5;
+  mult *= chaMult();
   if (hasPerk('ham')) mult *= 1.25;
   if (FL && FL.rule.id === 'hypefest') mult *= 2;
   G.hype += n * mult;
@@ -159,7 +165,7 @@ function tag(t) {
   const d = G.doc;
   const v = DOC_VALUES[t];
   if (!v) return;
-  for (const k in v) d[k] += v[k];
+  for (const k in v) d[k] += k === 'trust' && v[k] > 0 ? Math.round(v[k] * chaMult()) : v[k];
   d.memory.push(t);
   d.heardLast = false;
   if (d.memory.length > 6) d.memory.shift();
@@ -173,10 +179,10 @@ function docMood() {
 }
 
 // ---------- New game, loading, saving ----------
-function newGame(slot, name, jobId, raceId, clsId, tutorial = true, perks = []) {
+function newGame(slot, name, jobId, raceId, clsId, tutorial = true, perks = [], sex = 'm') {
   const seed = newSeed();
   G = {
-    v: 2, slot, name, job: jobId, perks: perks.slice(), race: raceId, cls: clsId, seed, floor: tutorial ? 0 : 1,
+    v: 2, slot, name, sex, job: jobId, perks: perks.slice(), race: raceId, cls: clsId, seed, floor: tutorial ? 0 : 1,
     lvl: 1, xp: 0, hp: 0, mp: 0, tokens: 5,
     inv: {}, order: [], favs: {}, equip: emptyEquip(),
     pos: null, moves: [], radar: 0, respawnT: 0, spawnCount: 0, tutSeen: {}, seen: '', shopBought: {},
@@ -196,7 +202,7 @@ function newGame(slot, name, jobId, raceId, clsId, tutorial = true, perks = []) 
   addItem('w_pipe', 1, true);
   G.equip.weapon = 'w_pipe';
   if (clsId === 'scrapper') addItem('bomb', 3, true);
-  if (clsId === 'hex') addItem('potion_mana', 2, true);
+  if (byId(CLASSES, clsId).magic) addItem('potion_mana', 2, true);
   buildFloor();
   G.pos = { ...FL.start };
   save();
@@ -225,6 +231,8 @@ function loadSlot(i) {
   // Bring older saves up to date.
   G.equip = { ...emptyEquip(), ...(G.equip || {}) };
   G.moves = G.moves || [];
+  G.sex = G.sex || 'm';
+  if (!byId(CLASSES, G.cls)) G.cls = 'brawler';
   if (!G.perks) G.perks = LEGACY_PERK[G.job] ? [LEGACY_PERK[G.job]] : [];
   G.radar = G.radar || 0;
   G.respawnT = G.respawnT || 0;
@@ -284,7 +292,7 @@ function showTitle() {
   const rows = slots.map((s, i) => {
     if (!s) return `<button class="slot-empty" data-act="new" data-i="${i}"><span>${i + 1}. Empty slot</span><span>+ New hero</span></button>`;
     const r = byId(RACES, s.race) || RACES[0], c = byId(CLASSES, s.cls) || CLASSES[0];
-    const img = heroSprite(r, c).toDataURL();
+    const img = heroSprite(r, c, 'down', 0, s.sex).toDataURL();
     const when = s.savedAt ? new Date(s.savedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
     const del = titleState.confirm === i
       ? `<button class="del-confirm" data-act="del" data-i="${i}">Delete?</button>`
@@ -346,32 +354,51 @@ const overlayHandlers = {
 
 // ---------- Character creation ----------
 let cr = null;
+const CREATE_STEPS = ['who', 'job', 'intro', 'race', 'class', 'confirm'];
+// Every new save rolls 8 old jobs (each with 4 random enhancements) and 8 classes to pick from.
+function rollJobOffers() {
+  const all = Object.keys(PERKS);
+  return R.shuffle(JOBS).slice(0, 8).map((j) => {
+    const own = R.shuffle(j.perks).slice(0, 2);
+    const extra = R.shuffle(all.filter((p) => !own.includes(p))).slice(0, 2);
+    return { job: j.id, perks: R.shuffle([...own, ...extra]) };
+  });
+}
 function startCreate(slot) {
-  // Your old job is drawn at random. You choose which of its enhancements to keep.
-  cr = { slot, step: 'who', name: '', job: R.pick(JOBS).id, perks: [], race: 'human', cls: 'brawler' };
+  const classes = R.shuffle(CLASSES).slice(0, 8).map((c) => c.id);
+  cr = { slot, step: 'who', name: '', sex: 'm', offers: rollJobOffers(), job: null, perks: [], race: 'human', classes, cls: classes[0] };
   renderCreate();
 }
 function createReady() { return cr.name.trim() && cr.job && cr.perks.length === 2; }
+function offerFor(jobId) { return cr.offers.find((o) => o.job === jobId); }
+function modsText(m) { return Object.entries(m).map(([k, v]) => (v > 0 ? '+' : '') + v + ' ' + STAT_NAMES[k]).join(', '); }
+function cannotText(c) { return c.cannot && c.cannot.length ? `Can't learn ${c.cannot.map((x) => SCHOOL_NAMES[x]).join(', ')} spells.` : 'Can learn every spell.'; }
 function renderCreate() {
   const r = byId(RACES, cr.race), c = byId(CLASSES, cr.cls);
-  const preview = heroSprite(r, c).toDataURL();
+  const preview = heroSprite(r, c, 'down', 0, cr.sex).toDataURL();
   if (cr.step === 'who') {
-    const job0 = byId(JOBS, cr.job);
     showOverlay(`
       <h2>WHO WERE YOU?</h2>
       <p class="muted">Before the world started ending, you were just a regular person.</p>
-      <label for="nm">Your name</label>
-      <input id="nm" type="text" maxlength="14" autocomplete="off" value="${esc(cr.name)}" placeholder="Type a name">
-      <h2>YOUR OLD JOB</h2>
-      <div class="job-card"><span class="lbl">BOOKIE pulled your file. You used to work as:</span><span class="nm">${esc(job0.name).toUpperCase()}</span><span class="ds">${esc(job0.flavor)}</span></div>
-      <div class="row-between"><h2>PICK 2 ENHANCEMENTS</h2><span class="muted" style="font-size:14px">${cr.perks.length} of 2</span></div>
-      <div class="cards">${job0.perks.map((pid) => `<button class="card ${cr.perks.includes(pid) ? 'sel' : ''}" data-act="perk" data-id="${pid}"><span class="nm">${cr.perks.includes(pid) ? '✓ ' : ''}${esc(PERKS[pid].name)}</span><span class="ds">${esc(PERKS[pid].desc)}</span></button>`).join('')}</div>
-      <div class="grid2"><button class="btn grey" data-act="back">BACK</button><button class="btn green" data-act="next" ${createReady() ? '' : 'disabled'}>NEXT</button></div>`);
+      <div class="preview"><img src="${preview}" alt=""><div style="flex:1">
+        <label for="nm">Your name</label>
+        <input id="nm" type="text" maxlength="14" autocomplete="off" value="${esc(cr.name)}" placeholder="Type a name"></div></div>
+      <div class="grid2"><button class="btn ${cr.sex === 'm' ? 'gold' : 'grey'}" data-act="sex" data-id="m">♂ MALE</button><button class="btn ${cr.sex === 'f' ? 'gold' : 'grey'}" data-act="sex" data-id="f">♀ FEMALE</button></div>
+      <div class="grid2"><button class="btn grey" data-act="back">BACK</button><button class="btn green" data-act="next" ${cr.name.trim() ? '' : 'disabled'}>NEXT</button></div>`);
     const input = $('nm');
     input.addEventListener('input', () => {
       cr.name = input.value;
-      overlay.querySelector('[data-act=next]').disabled = !createReady();
+      overlay.querySelector('[data-act=next]').disabled = !cr.name.trim();
     });
+  } else if (cr.step === 'job') {
+    const pick = cr.job && offerFor(cr.job);
+    showOverlay(`
+      <h2>YOUR OLD JOB</h2>
+      <p class="muted">BOOKIE pulled 8 files that could be yours. Pick one, then keep 2 of its enhancements.</p>
+      <div class="cards">${cr.offers.map((o) => { const j = byId(JOBS, o.job); return `<button class="card ${cr.job === o.job ? 'sel' : ''}" data-act="job" data-id="${o.job}"><span class="nm">${cr.job === o.job ? '✓ ' : ''}${esc(j.name)}</span><span class="ds">${esc(j.flavor)}</span></button>`; }).join('')}</div>
+      ${pick ? `<div class="row-between"><h2>PICK 2 ENHANCEMENTS</h2><span class="muted" style="font-size:14px">${cr.perks.length} of 2</span></div>
+      <div class="cards">${pick.perks.map((pid) => `<button class="card ${cr.perks.includes(pid) ? 'sel' : ''}" data-act="perk" data-id="${pid}"><span class="nm">${cr.perks.includes(pid) ? '✓ ' : ''}${esc(PERKS[pid].name)}</span><span class="ds">${esc(PERKS[pid].desc)}</span></button>`).join('')}</div>` : ''}
+      <div class="grid2"><button class="btn grey" data-act="back">BACK</button><button class="btn green" data-act="next" ${createReady() ? '' : 'disabled'}>NEXT</button></div>`);
   } else if (cr.step === 'intro') {
     showOverlay(`
       <h2>THE END OF THE WORLD</h2>
@@ -390,10 +417,15 @@ function renderCreate() {
       <div class="cards">${RACES.map((x) => `<button class="card ${cr.race === x.id ? 'sel' : ''}" data-act="race" data-id="${x.id}"><span class="nm">${esc(x.name)}</span><span class="ds">Starting odds ${x.odds} to 1</span></button>`).join('')}</div>
       <div class="grid2"><button class="btn grey" data-act="back">BACK</button><button class="btn green" data-act="next">NEXT</button></div>`);
   } else if (cr.step === 'class') {
+    const sch = (x) => x.cannot && x.cannot.length ? `No ${x.cannot.map((k) => SCHOOL_NAMES[k]).join(', ')}` : 'Any spell';
     showOverlay(`
       <h2>PICK A CLASS</h2>
-      <div class="preview"><img src="${preview}" alt=""><div><p><b>${esc(r.name)} ${esc(c.name)}</b></p><p class="muted" style="font-size:15px">${esc(c.desc)} Skill: ${esc(c.skill.name)} (${c.skill.mp} MP). ${esc(c.skill.desc)}</p></div></div>
-      <div class="cards">${CLASSES.map((x) => `<button class="card ${cr.cls === x.id ? 'sel' : ''}" data-act="cls" data-id="${x.id}"><span class="nm">${esc(x.name)}</span><span class="ds">${esc(x.desc)}</span></button>`).join('')}</div>
+      <p class="muted" style="font-size:14px">These 8 classes are open to you this run.</p>
+      <div class="preview"><img src="${preview}" alt=""><div><p><b>${esc(r.name)} ${esc(c.name)}</b></p><p class="muted" style="font-size:15px">${esc(c.desc)}</p>
+        <p style="font-size:15px"><b style="color:var(--gold)">${esc(c.skill.name)}</b> (${c.skill.mp} MP): ${esc(c.skill.desc)}</p>
+        <p style="font-size:14px;color:#ff8a8a">${esc(cannotText(c))}</p>
+        <p class="muted" style="font-size:14px">${esc(modsText(c.mods))}</p></div></div>
+      <div class="cards">${cr.classes.map((id) => { const x = byId(CLASSES, id); return `<button class="card ${cr.cls === x.id ? 'sel' : ''}" data-act="cls" data-id="${x.id}"><span class="nm">${esc(x.name)}</span><span class="ds">${esc(x.skill.name)} · ${esc(sch(x))}</span></button>`; }).join('')}</div>
       <div class="grid2"><button class="btn grey" data-act="back">BACK</button><button class="btn green" data-act="next">NEXT</button></div>`);
   } else if (cr.step === 'confirm') {
     const j = byId(JOBS, cr.job);
@@ -401,7 +433,7 @@ function renderCreate() {
       <h2>READY?</h2>
       <div class="preview"><img src="${preview}" alt=""><div>
         <p><b>${esc(cr.name.trim())}</b></p>
-        <p class="muted" style="font-size:15px">${esc(r.name)} ${esc(c.name)}, former ${esc(j.name.toLowerCase())}</p>
+        <p class="muted" style="font-size:15px">${cr.sex === 'f' ? 'Female' : 'Male'} ${esc(r.name)} ${esc(c.name)}, former ${esc(j.name.toLowerCase())}</p>
         <p class="muted" style="font-size:14px">${cr.perks.map((p) => esc(PERKS[p].name)).join(' + ')}</p>
         <p style="color:var(--gold); font-size:15px">Starting odds ${r.odds + c.odds} to 1</p></div></div>
       <div class="bookie"><img src="${sprite('bookie').toDataURL()}" alt=""><p><b style="color:var(--pink)">BOOKIE:</b> ${r.odds + c.odds >= 20 ? 'A long shot! The Patrons love a long shot. Mostly to watch it fail.' : 'A safe pick. Boring, but the Patrons respect a sure thing.'}</p></div>
@@ -416,17 +448,19 @@ Object.assign(overlayHandlers, {
     else { cr.perks.push(id); if (cr.perks.length > 2) cr.perks.shift(); }
     renderCreate();
   },
+  job: (_, b) => { if (cr.job !== b.dataset.id) { cr.job = b.dataset.id; cr.perks = []; } renderCreate(); },
+  sex: (_, b) => { cr.sex = b.dataset.id; renderCreate(); },
   race: (_, b) => { cr.race = b.dataset.id; renderCreate(); },
   cls: (_, b) => { cr.cls = b.dataset.id; renderCreate(); },
-  next: () => { const steps = ['who', 'intro', 'race', 'class', 'confirm']; cr.step = steps[steps.indexOf(cr.step) + 1]; renderCreate(); },
+  next: () => { cr.step = CREATE_STEPS[CREATE_STEPS.indexOf(cr.step) + 1]; renderCreate(); },
   back: () => {
-    const steps = ['who', 'intro', 'race', 'class', 'confirm'];
-    const at = steps.indexOf(cr.step);
+    const at = CREATE_STEPS.indexOf(cr.step);
     if (at === 0) return showTitle();
-    cr.step = steps[at === 2 ? 0 : at - 1]; renderCreate();
+    // Going back from the race step skips the story screen.
+    cr.step = CREATE_STEPS[cr.step === 'race' ? 1 : at - 1]; renderCreate();
   },
-  begin: () => newGame(cr.slot, cr.name.trim().slice(0, 14), cr.job, cr.race, cr.cls, true, cr.perks),
-  beginskip: () => newGame(cr.slot, cr.name.trim().slice(0, 14), cr.job, cr.race, cr.cls, false, cr.perks),
+  begin: () => newGame(cr.slot, cr.name.trim().slice(0, 14), cr.job, cr.race, cr.cls, true, cr.perks, cr.sex),
+  beginskip: () => newGame(cr.slot, cr.name.trim().slice(0, 14), cr.job, cr.race, cr.cls, false, cr.perks, cr.sex),
 });
 
 // ---------- Hints and BOOKIE's camera booths ----------
@@ -465,7 +499,7 @@ function adviceLines() {
   if (G.hp < s.maxHp * 0.4) tips.push('You look rough. Drink a potion or get healed before your next fight.');
   const boxes = boxCount();
   if (boxes) tips.push(`You are carrying ${boxes} loot box${boxes > 1 ? 'es' : ''}. You can open them right here: Bag, then Open all.`);
-  const scrolls = G.order.filter((id) => ITEMS[id].type === 'scroll' && count(id) > 0 && !G.moves.includes(ITEMS[id].teaches));
+  const scrolls = G.order.filter((id) => ITEMS[id].type === 'scroll' && count(id) > 0 && !knownScroll(id));
   if (scrolls.length) tips.push(`You have ${scrolls.length} scroll${scrolls.length > 1 ? 's' : ''} you have not learned. Learn them here in the safe room.`);
   const ups = upgradeCount();
   if (ups) tips.push(`You have better gear sitting in your bag. Tap Gear, then Equip best.`);
@@ -560,7 +594,7 @@ function docGreeting() {
 function healPrice() { return { friend: 0, warm: 5, neutral: 10, scared: 0, hostile: null }[docMood()]; }
 function potionPrice() {
   const base = { friend: 5, warm: 7, neutral: 8, scared: 8, hostile: 16 }[docMood()];
-  return G.cls === 'talker' ? Math.max(3, base - 2) : base;
+  return cls().haggle ? Math.max(3, base - 2) : base;
 }
 function docPanel() {
   const d = G.doc;
@@ -584,10 +618,10 @@ function docPanel() {
       docPanel();
     } },
     { label: 'Where are the bosses?', sub: 'Marks the nearest boss on your map.', color: 'red', fn: () => { pointToBoss(docLine); docPanel(); } },
-    ...(d.taught ? [] : [{ label: 'Teach me something', sub: d.trust >= 5 ? 'She has a healing spell to share.' : 'She needs to trust you more first. Kindness helps.', disabled: d.trust < 5, fn: () => {
+    ...(d.taught ? [] : [{ label: 'Teach me something', sub: d.trust >= 5 ? (canLearn('scroll_mend') ? 'She has a healing spell to share.' : 'She has something to help you heal.') : 'She needs to trust you more first. Kindness helps.', disabled: d.trust < 5, fn: () => {
       d.taught = true;
-      docLine('Fine. Here\'s how I keep people alive down here. Learn it in a safe room, like this one.');
-      addItem('scroll_mend', 1, true);
+      if (canLearn('scroll_mend')) { docLine('Fine. Here\'s how I keep people alive down here. Learn it in a safe room, like this one.'); addItem('scroll_mend', 1, true); }
+      else { docLine(`Healing magic won't stick to a ${cls().name}. Take these instead, and don't waste them.`); addItem('potion_big', 2, true); }
       docPanel();
     } }]),
     { label: 'Ask about the show', sub: 'Gossip about the Patrons and BOOKIE.', fn: () => {
@@ -717,11 +751,11 @@ function gearDelta(id) {
   for (const k in STAT_NAMES) { const v = (b[k] || 0) - (a[k] || 0); if (v) d[k] = v; }
   return d;
 }
-const STAT_WEIGHT = { atk: 2, def: 2, mag: 1.5, spd: 1, luck: 0.6, maxHp: 0.35, maxMp: 0.25, xpPct: 0.2 };
+const STAT_WEIGHT = { cha: 0.5, atk: 2, def: 2, mag: 1.5, spd: 1, luck: 0.6, maxHp: 0.35, maxMp: 0.25, xpPct: 0.2 };
 function gearScore(id) {
   if (!id) return 0;
   let t = 0;
-  for (const [k, v] of Object.entries(gearStats(id))) t += v * STAT_WEIGHT[k] * (k === 'mag' && G.cls === 'hex' ? 1.5 : 1);
+  for (const [k, v] of Object.entries(gearStats(id))) t += v * STAT_WEIGHT[k] * (k === 'mag' && cls().magic ? 1.5 : 1);
   return t + (ITEMS[id].hype ? 1 : 0);
 }
 function ownedFor(slot) { const t = slotType(slot); return G.order.filter((x) => ITEMS[x].type === t && count(x) > 0); }
@@ -790,9 +824,10 @@ function renderGear(extra = '') {
   showOverlay(`
     <div class="row-between"><h2>GEAR</h2><span class="muted" style="font-size:14px">Tap a slot to change it</span></div>
     ${extra}
-    <div class="preview"><img src="${heroSprite(race(), cls()).toDataURL()}" alt=""><div class="stat-list" style="flex:1">
+    <div class="preview"><img src="${heroSprite(race(), cls(), 'down', 0, G.sex).toDataURL()}" alt=""><div class="stat-list" style="flex:1">
       <span>HP <b>${s.maxHp}</b></span><span>MP <b>${s.maxMp}</b></span><span>ATK <b>${s.atk}</b></span><span>DEF <b>${s.def}</b></span>
-      <span>MAG <b>${s.mag}</b></span><span>SPD <b>${s.spd}</b></span><span>LUCK <b>${s.luck}</b></span>${s.xpPct ? `<span>BONUS XP <b>+${s.xpPct}%</b></span>` : ''}</div></div>
+      <span>MAG <b>${s.mag}</b></span><span>SPD <b>${s.spd}</b></span><span>LUCK <b>${s.luck}</b></span><span>CHA <b>${s.cha}</b></span>${s.xpPct ? `<span>BONUS XP <b>+${s.xpPct}%</b></span>` : ''}</div></div>
+    <button class="btn" data-act="gsheet">FULL CHARACTER SHEET</button>
     ${ups ? `<button class="btn gold" data-act="gbest">EQUIP BEST GEAR (${ups} UPGRADE${ups > 1 ? 'S' : ''})</button>` : ''}
     <div class="stack">${rows}</div>
     <button class="btn grey" data-act="gclose" style="position:sticky; bottom:0">${gearState.from === 'bag' ? 'BACK TO BAG' : 'CLOSE'}</button>`);
@@ -836,7 +871,8 @@ function equipNowHtml(id, back) {
 // ---------- Penny's shop: stock gets better as you level up ----------
 // Junk: gear worse than what you wear in that slot that no recipe needs. Never materials.
 const RECIPE_INPUTS = new Set(RECIPES.flatMap((r) => Object.keys(r.need)));
-function knownScroll(id) { return ITEMS[id].type === 'scroll' && G.moves.includes(ITEMS[id].teaches); }
+// A scroll that's no use to you: already learned, or a school your class can't learn.
+function knownScroll(id) { return ITEMS[id].type === 'scroll' && (G.moves.includes(ITEMS[id].teaches) || !canLearn(id)); }
 function isJunk(id) {
   if (knownScroll(id)) return true;
   if (!isGear(id) || spareCopies(id) <= 0) return false;
@@ -849,7 +885,7 @@ function junkList() { return G.order.filter((id) => count(id) > 0 && isJunk(id))
 // Would buying this make you stronger? Better than any gear you own for that slot, or a move you lack.
 function worthBuying(id) {
   const it = ITEMS[id];
-  if (it.type === 'scroll') return !G.moves.includes(it.teaches) && !count(id);
+  if (it.type === 'scroll') return !knownScroll(id) && !count(id);
   if (!isGear(id)) return false;
   const spare = ownedFor(it.type).filter((x) => spareCopies(x) > 0).map(gearScore);
   return gearScore(id) > Math.max(gearScore(G.equip[compareSlot(id)]), ...spare);
@@ -875,7 +911,8 @@ function priceOf(id) {
   const it = ITEMS[id];
   let p = it.price || RARITY_PRICE[it.rarity] || 6;
   if (isGear(id) || it.type === 'scroll') p = Math.round(p * 1.25);
-  if (G.cls === 'talker') p = Math.max(1, Math.round(p * 0.8));
+  if (cls().haggle) p = Math.max(1, Math.round(p * 0.8));
+  if (chaBonus()) p = Math.max(1, Math.round(p * (1 - Math.max(-0.1, Math.min(0.25, chaBonus() * 0.02)))));
   if (hasPerk('haggler')) p = Math.max(1, Math.round(p * 0.85));
   return p;
 }
@@ -889,7 +926,7 @@ function shopStock() {
   const t = shopTier();
   const rng = makeRng(((G.seed ^ (G.floor * 7919) ^ (G.lvl * 104729)) >>> 0) || 1);
   const basics = [], scrolls = [];
-  for (let i = 0; i <= t; i++) { basics.push(...SHOP_TIERS[i].basics); scrolls.push(...SHOP_TIERS[i].scrolls.filter((sc) => !G.moves.includes(ITEMS[sc].teaches))); }
+  for (let i = 0; i <= t; i++) { basics.push(...SHOP_TIERS[i].basics); scrolls.push(...SHOP_TIERS[i].scrolls.filter((sc) => !knownScroll(sc))); }
   // Every level shifts the odds toward rarer gear and adds more specials.
   const L = G.lvl;
   const weights = { rusty: Math.max(1, 10 - 2 * L), silver: L >= 2 ? Math.min(10, 2 * L) : 0, gold: L >= 4 ? (L - 3) * 2 : 0, patron: L >= 7 ? (L - 6) * 2 : 0 };
@@ -1515,6 +1552,7 @@ function itemAction(id) {
   if (it.type === 'box') return safe ? ['Open', true] : ['Open', false, 'Safe room only'];
   if (it.type === 'scroll') {
     if (G.moves.includes(it.teaches)) return [null, false, 'Already known. Sell it to Penny as junk.'];
+    if (!canLearn(id)) return [null, false, `${cls().name}s can't learn ${SCHOOL_NAMES[MOVES[it.teaches].school]} spells. Sell it.`];
     return safe ? ['Learn', true] : ['Learn', false, 'Safe room only'];
   }
   if (it.type === 'potion' || it.type === 'food') { const w = potionWait(id); return w ? ['Use', false, w] : ['Use', true]; }
@@ -1577,7 +1615,7 @@ function useItemFromBag(id) {
 function learnScroll(id) {
   if (!inSafe()) return;
   const mv = ITEMS[id].teaches;
-  if (G.moves.includes(mv)) return renderBag();
+  if (G.moves.includes(mv) || !canLearn(id)) return renderBag();
   G.moves.push(mv);
   removeItem(id);
   say(`<span class="good">You learned ${esc(MOVES[mv].name)}!</span> ${esc(MOVES[mv].desc)}`);
@@ -1689,8 +1727,8 @@ function openAllBoxes() {
 }
 
 // ---------- Pause menu ----------
-function openMenu() {
-  if (!canAct()) return;
+function openMenu(force = false) {
+  if (!force && !canAct()) return;
   moveHeld = null;
   const s = stats();
   const docWords = { friend: 'Doc trusts you a lot.', warm: 'Doc likes you.', neutral: 'Doc is not sure about you yet.', scared: 'Doc is scared of you.', hostile: 'Doc does not like you.' }[docMood()];
@@ -1700,14 +1738,16 @@ function openMenu() {
     <p class="banner" style="color:var(--cyan)">PAUSED</p>
     <p class="muted" style="text-align:center">The game is stopped${G.radar > 0 ? `, including your Mob Radar (${Math.ceil(G.radar)}s left)` : ''}.</p>
     <h2>${esc(G.name).toUpperCase()}</h2>
-    <p class="muted">${esc(race().name)} ${esc(cls().name)}, former ${esc(job().name.toLowerCase())}. Level ${G.lvl} (${G.xp} / ${G.lvl * 20} XP)</p>
+    <p class="muted">${G.sex === 'f' ? 'Female' : 'Male'} ${esc(race().name)} ${esc(cls().name)}, former ${esc(job().name.toLowerCase())}. Level ${G.lvl} (${G.xp} / ${G.lvl * 20} XP)</p>
     <div class="stat-list">
       <span>HP <b>${Math.round(G.hp)} / ${s.maxHp}</b></span><span>MP <b>${Math.round(G.mp)} / ${s.maxMp}</b></span>
       <span>Attack <b>${s.atk}</b></span><span>Defense <b>${s.def}</b></span>
       <span>Magic <b>${s.mag}</b></span><span>Speed <b>${s.spd}</b></span>
+      <span>Charisma <b>${s.cha}</b></span><span>Luck <b>${s.luck}</b></span>
       <span>Odds <b>${oddsText()}</b></span><span>Deaths <b>${G.deaths}</b></span>
       <span>Kills <b>${G.kills}</b></span><span>Spared <b>${G.spared}</b></span>
     </div>
+    <button class="btn gold" data-act="sheet">CHARACTER SHEET (STR, INT, CHA...)</button>
     <p><b>Moves:</b> ${esc(moves)}</p>
     <p><b>Enhancements:</b> ${(G.perks || []).map((p) => `${esc(PERKS[p].name)} (${esc(PERKS[p].desc)})`).join(', ') || 'none'}</p>
     <p><b>${esc(race().name)}:</b> ${esc(race().desc)}</p>
@@ -1720,6 +1760,57 @@ function openMenu() {
     <button class="btn grey" data-act="quit">QUIT TO TITLE (LOSES PROGRESS SINCE LAST SAVE)</button>
     <span class="version" style="text-align:center">Build ${esc(VERSION)}</span>`);
 }
+// ---------- Character sheet ----------
+const SHEET = [
+  ['atk', 'Strength', 'ATK', 'Damage from punches, weapons and physical skills.'],
+  ['def', 'Toughness', 'DEF', 'Takes damage off every hit you take.'],
+  ['maxHp', 'Vitality', 'Max HP', 'How much damage you can take before you go down.'],
+  ['mag', 'Intelligence', 'MAG', 'Power of spells, magic skills, poison and healing.'],
+  ['maxMp', 'Focus', 'Max MP', 'Mana for class skills and spells.'],
+  ['spd', 'Agility', 'SPD', 'Better odds of running away from fights.'],
+  ['luck', 'Luck', 'LUCK', 'Critical hits, and talking mobs down.'],
+  ['cha', 'Charisma', 'CHA', 'Cheaper shops, more hype from the crowd, mobs beg sooner, and people trust you faster.'],
+  ['xpPct', 'Fast Learner', 'XP%', 'Bonus experience from every fight.'],
+];
+function statSources() {
+  const z = () => Object.fromEntries(Object.keys(BASE_STATS).map((k) => [k, 0]));
+  const src = { base: { ...BASE_STATS }, race: z(), class: z(), level: z(), perks: z(), gear: z() };
+  for (const k in race().mods) src.race[k] += race().mods[k];
+  for (const k in cls().mods) src.class[k] += cls().mods[k];
+  for (const p of G.perks || []) for (const k in PERKS[p].mods || {}) src.perks[k] += PERKS[p].mods[k];
+  const l = G.lvl - 1;
+  Object.assign(src.level, { maxHp: l * 6, maxMp: l * 3, atk: l, def: Math.floor(l / 2), mag: l });
+  const total = stats();
+  for (const k in total) src.gear[k] = total[k] - ['base', 'race', 'class', 'level', 'perks'].reduce((t, n) => t + (src[n][k] || 0), 0);
+  return { src, total };
+}
+let sheetFrom = 'menu';
+function openSheet(from = 'menu') {
+  sheetFrom = from;
+  const { src, total } = statSources();
+  const names = { base: 'Base', race: race().name, class: cls().name, level: 'Level', perks: 'Enhancements', gear: 'Gear' };
+  const rows = SHEET.map(([k, nm, short, what]) => {
+    const parts = Object.keys(names).filter((n) => n !== 'base' && src[n][k]).map((n) => `<span class="${src[n][k] > 0 ? 'up' : 'down'}">${src[n][k] > 0 ? '+' : ''}${src[n][k]} ${esc(names[n])}</span>`);
+    const val = k === 'xpPct' ? `+${total[k]}%` : total[k];
+    return `<div class="sheet-row"><div class="sheet-top"><span class="sheet-nm">${nm} <small>${short}</small></span><span class="sheet-val">${val}</span></div>
+      <div class="sheet-what">${what}</div><div class="sheet-src">${k === 'xpPct' ? '' : `${src.base[k]} base`}${parts.length ? (k === 'xpPct' ? '' : ' ') + parts.join(' ') : ''}</div></div>`;
+  }).join('');
+  const c = cls();
+  showOverlay(`
+    <div class="talk-head"><img src="${heroSprite(race(), c, 'down', 0, G.sex).toDataURL()}" alt=""><div class="who">
+      <b style="font-size:18px">${esc(G.name)}</b>
+      <span class="muted" style="font-size:14px">${G.sex === 'f' ? 'Female' : 'Male'} ${esc(race().name)} ${esc(c.name)}, former ${esc(job().name.toLowerCase())}</span>
+      <span style="font-size:14px;color:var(--cyan)">Level ${G.lvl} · ${G.xp} / ${G.lvl * 20} XP</span></div></div>
+    <h2>CHARACTER SHEET</h2>
+    <div class="sheet">${rows}</div>
+    <p style="font-size:15px"><b style="color:var(--gold)">${esc(c.skill.name)}</b> (${c.skill.mp} MP): ${esc(c.skill.desc)}</p>
+    <p style="font-size:14px;color:#ff8a8a">${esc(cannotText(c))}</p>
+    <p class="muted" style="font-size:14px">Every level gives +6 HP, +3 MP, +1 STR, +1 INT, and +1 DEF every other level. Gear, enhancements, race and class add the rest.</p>
+    <button class="btn grey" data-act="sheetback" style="position:sticky; bottom:0">BACK</button>`);
+}
+overlayHandlers.sheet = () => openSheet('menu');
+overlayHandlers.gsheet = () => openSheet('gear');
+overlayHandlers.sheetback = () => (sheetFrom === 'gear' ? renderGear() : openMenu(true));
 overlayHandlers.quit = () => showTitle();
 overlayHandlers.skiptut = () => finishTutorial();
 
@@ -1786,29 +1877,78 @@ function heroAtk() { return stats().atk + (B.buff.atk || 0); }
 function heroDef() { return stats().def + (B.buff.def || 0) + (B.guard ? 4 : 0); }
 function avgDef() { const a = alive(); return a.length ? a.reduce((s, e) => s + e.def, 0) / a.length : 0; }
 
-// Everything you can do when you tap Attack, with its type and rough damage.
+// Rough damage for each move kind, so the Attack menu can show and sort by it.
+// Returns { dmg } per target, plus all: true when it hits every mob, or util: text for non-damage moves.
+function moveEstimate(kind) {
+  const s = stats(), a = heroAtk(), d = avgDef(), m = s.mag;
+  const hit = (n) => Math.max(1, n);
+  const T = {
+    double: () => ({ dmg: hit(a + 1 - d) * 2 }),
+    bolt: () => ({ dmg: m * 1.6 + 1.5 }),
+    flashy: () => ({ dmg: hit(a + 1 - d) * 1.3 }),
+    shrapnel: () => ({ dmg: hit(5 + G.lvl + m / 2 - d / 2), all: true }),
+    talk: () => ({ util: 'TALK' }),
+    heal: () => ({ util: '+' + Math.round(20 + m * 1.5) + ' HP' }),
+    stun: () => ({ dmg: hit(a + 1 - d) }),
+    steal: () => ({ dmg: hit(a + 1 - d) * 1.1 }),
+    burst: () => ({ dmg: hit(4 + m * 0.9 - d / 2), all: true }),
+    freeze: () => ({ dmg: 4 + m * 0.9 }),
+    drain: () => ({ dmg: 4 + m * 1.1 }),
+    poison: () => ({ dmg: 2 + m / 2 + 3 * (3 + Math.floor(m / 3)) }),
+    multi: () => ({ dmg: 3 * hit((a + 1) * 0.6 - d) }),
+    song: () => ({ util: '+3 ATK' }),
+    rampage: () => ({ dmg: hit(a + 1 - d), all: true }),
+    crit: () => ({ dmg: (a + 2) * 3 }),
+    guard: () => ({ util: '+6 DEF' }),
+    blind: () => ({ util: 'STUN' }),
+    curse: () => ({ dmg: 3 + m }),
+    venom: () => ({ dmg: 3 * (3 + Math.floor(m / 3)) }),
+    frost: () => ({ dmg: 4 + m * 0.9 }),
+    leech: () => ({ dmg: 5 + m }),
+    mend: () => ({ util: '+' + (30 + m) + ' HP' }),
+    iron: () => ({ util: '+4 DEF' }),
+    fireball: () => ({ dmg: hit(6 + m * 1.1 - d / 2), all: true }),
+    lightning: () => ({ dmg: 10 + m * 1.4, all: true }),
+  };
+  const r = (T[kind] || (() => ({ util: '' })))();
+  if (r.dmg != null) r.dmg = Math.max(1, Math.round(r.dmg));
+  return r;
+}
+
+// Everything you can do when you tap Attack. Free attacks come first, strongest on top,
+// then mana moves, strongest on top, with heals and buffs at the bottom.
 function fightOptions() {
-  const s = stats();
   const w = G.equip.weapon && ITEMS[G.equip.weapon];
   const est = (n) => Math.max(1, Math.round(n));
-  const opts = [];
-  opts.push(w
-    ? { id: 'weapon', label: 'Swing ' + w.name, type: 'WEAPON', info: `~${est(heroAtk() + 1 - avgDef())} dmg`, target: 'one' }
-    : { id: 'weapon', label: 'Punch', type: 'PHYSICAL', info: `~${est(heroAtk() + 1 - avgDef())} dmg`, target: 'one' });
-  opts.push({ id: 'kick', label: 'Kick', type: 'PHYSICAL', info: `~${est((heroAtk() + 1) * 0.7 - avgDef())} dmg, stops a wind-up`, target: 'one' });
-  const sk = cls().skill;
-  opts.push({ id: 'move:class', label: sk.name, type: 'CLASS SKILL', info: `${sk.mp} MP. ${sk.desc}`, target: sk.target, mp: sk.mp });
-  for (const m of G.moves) {
-    const mv = MOVES[m];
-    opts.push({ id: 'move:' + m, label: mv.name, type: 'SPELL', info: `${mv.mp} MP. ${mv.desc}`, target: mv.target, mp: mv.mp });
-  }
+  const n = Math.max(1, alive().length);
+  const free = [], mana = [];
+  free.push({ id: 'weapon', label: w ? 'Swing ' + w.name : 'Punch', type: w ? 'WEAPON' : 'PHYSICAL', info: 'Hits one mob.', dmg: est(heroAtk() + 1 - avgDef()), target: 'one' });
+  free.push({ id: 'kick', label: 'Kick', type: 'PHYSICAL', info: 'Weaker, but stops a wind-up.', dmg: est((heroAtk() + 1) * 0.7 - avgDef()), target: 'one' });
   for (const id of G.order) {
     if (count(id) > 0 && ITEMS[id].type === 'bomb') {
       const mult = (G.race === 'gnome' ? 1.5 : 1) * (hasPerk('demo') ? 1.3 : 1);
-      opts.push({ id: 'bomb:' + id, label: `Throw ${ITEMS[id].name} x${count(id)}`, type: 'BOMB', info: `${Math.round(ITEMS[id].dmg * mult)} dmg to every mob`, target: 'all' });
+      free.push({ id: 'bomb:' + id, label: `${ITEMS[id].name} x${count(id)}`, type: 'BOMB', info: 'Hits every mob. Uses one up.', dmg: Math.round(ITEMS[id].dmg * mult), all: true, target: 'all' });
     }
   }
-  return opts;
+  const sk = cls().skill;
+  const add = (id, def, type, kind) => {
+    const e = moveEstimate(kind);
+    mana.push({ id, label: def.name, type, info: def.desc, target: def.target, mp: def.mp, dmg: e.dmg || 0, all: e.all, util: e.util });
+  };
+  add('move:class', sk, 'CLASS', sk.kind);
+  for (const m of G.moves) add('move:' + m, MOVES[m], 'SPELL', m);
+  const total = (o) => (o.dmg || 0) * (o.all ? n : 1);
+  free.sort((x, y) => total(y) - total(x));
+  mana.sort((x, y) => total(y) - total(x));
+  return [...free, ...mana];
+}
+function fightOptHtml(o) {
+  const big = o.util != null && !o.dmg
+    ? `<span class="fdmg util">${esc(o.util)}</span>`
+    : `<span class="fdmg">${o.dmg}<small>${o.all ? 'EACH' : 'DMG'}</small></span>`;
+  const tag = o.mp ? `<span class="fmp">${o.mp} MP</span>` : '';
+  return `<button class="btn red text fight-opt ${o.mp ? 'mana' : ''}" data-b="act" data-arg="${o.id}" ${o.mp && G.mp < o.mp ? 'disabled' : ''}>
+    <span class="fmain"><span class="ftop"><b>${esc(o.label)}</b>${tag}${o.all ? '<span class="fall">ALL</span>' : ''}</span><span class="finfo">${esc(o.info)}</span></span>${big}</button>`;
 }
 
 function renderBattleControls() {
@@ -1821,7 +1961,9 @@ function renderBattleControls() {
       <button class="btn" data-b="guard">GUARD</button>
       <button class="btn grey" data-b="run" ${B.enemies.some((e) => e.boss) ? 'disabled' : ''}>RUN</button></div>`;
   } else if (B.phase === 'fight') {
-    btns = `<div class="stack opts">${fightOptions().map((o) => `<button class="btn red text fight-opt" data-b="act" data-arg="${o.id}" ${o.mp && G.mp < o.mp ? 'disabled' : ''}><span class="ftype">${esc(o.type)}</span> <b>${esc(o.label)}</b><br><span class="finfo">${esc(o.info)}</span></button>`).join('')}</div><button class="btn grey" data-b="back">BACK</button>`;
+    const opts = fightOptions();
+    const firstMana = opts.findIndex((o) => o.mp);
+    btns = `<div class="stack opts">${opts.map((o, i) => (i === firstMana ? `<div class="opt-head">MANA MOVES · you have ${G.mp} MP</div>` : '') + fightOptHtml(o)).join('')}</div><button class="btn grey" data-b="back">BACK</button>`;
   } else if (B.phase === 'target') {
     btns = `<p class="muted" style="margin:0">Who gets the ${esc(B.pendingLabel)}?</p><div class="stack opts">${alive().map((e) => `<button class="btn red text" data-b="target" data-arg="${e.id}">${esc(e.full)} (${e.hp} HP)</button>`).join('')}</div><button class="btn grey" data-b="back">BACK</button>`;
   } else if (B.phase === 'items') {
@@ -1837,6 +1979,8 @@ function renderBattleControls() {
   // The mob list only shows on the main menu screens, so action lists always have room.
   const showFoes = ['menu', 'mercy', 'busy', 'end'].includes(B.phase);
   controls.innerHTML = (showFoes ? foes : '') + btns;
+  // Picking a move hides the text box so more choices fit on screen.
+  textbox.classList.toggle('picking', ['fight', 'target', 'items'].includes(B.phase));
 }
 
 function battleInput(cmd, arg) {
@@ -1998,19 +2142,45 @@ async function castMove(id, e) {
   const bolt = async (color) => { if (e) { await fly(HERO_C, { x: eb.cx, y: eb.cy }, 'bolt', color, 320); burst(eb.cx, eb.cy, 'star', color); } };
   say(`You cast <b>${esc(def.name)}</b>!`);
   if (isClass) {
-    if (G.cls === 'brawler') { await fly(HERO_C, { x: eb.cx, y: eb.cy }, 'fist', '#c8334a', 240); burst(eb.cx, eb.cy, 'boom', '#ff8a8a'); hitEnemy(e, (heroAtk() + R.int(0, 2) - e.def) * 2); }
-    if (G.cls === 'hex') { await bolt('#c49af0'); hitEnemy(e, s.mag * 1.6 + R.int(0, 3)); }
-    if (G.cls === 'showboat') { burst(eb.cx, eb.cy, 'slash', '#f5c542'); await sleep(200); hitEnemy(e, (heroAtk() + R.int(0, 2) - e.def) * 1.3); addHype(2); }
-    if (G.cls === 'scrapper') {
-      const mid = { x: 160, y: 56 };
-      await fly(HERO_C, mid, 'junk', '#b8693a', 360);
-      burst(mid.x, mid.y, 'boom', '#b8693a');
-      for (const x of alive()) hitEnemy(x, 5 + G.lvl + s.mag / 2 - x.def / 2);
-    }
-    if (G.cls === 'talker') {
-      const p = (e.boss ? 0 : 0.45) + s.luck * 0.02 + (e.hp < e.maxHp * 0.4 ? 0.3 : 0);
-      if (R.chance(p)) { say(`You talk ${esc(e.full)} into walking away.`); killEnemy(e, 'spare'); G.spared++; tag('merciful'); }
-      else say(`${esc(e.full)} is not listening.`);
+    const a = () => heroAtk() + R.int(0, 2);
+    const fist = async (color = '#c8334a') => { await fly(HERO_C, { x: eb.cx, y: eb.cy }, 'fist', color, 240); burst(eb.cx, eb.cy, 'boom', color); };
+    const allBoom = async (color, proj = 'junk') => { const mid = { x: 160, y: 56 }; await fly(HERO_C, mid, proj, color, 360); burst(mid.x, mid.y, 'boom', color); };
+    const healMe = (h) => { h = Math.round(h); G.hp = Math.min(s.maxHp, G.hp + h); burst(HERO_C.x, HERO_C.y, 'sparkle', '#6bbf59'); popHero('+' + h, '#6bbf59'); say(`<span class="good">+${h} HP</span>`); };
+    switch (def.kind) {
+      case 'double': await fist(); hitEnemy(e, (a() + 1 - e.def) * 2); break;
+      case 'bolt': await bolt(def.color || '#c49af0'); hitEnemy(e, s.mag * 1.6 + R.int(0, 3)); break;
+      case 'flashy': burst(eb.cx, eb.cy, 'slash', '#f5c542'); await sleep(200); hitEnemy(e, (a() + 1 - e.def) * 1.3); addHype(2); break;
+      case 'shrapnel': await allBoom('#b8693a'); for (const x of alive()) hitEnemy(x, 5 + G.lvl + s.mag / 2 - x.def / 2); break;
+      case 'talk': {
+        const p = (e.boss ? 0 : 0.45) + s.luck * 0.02 + chaBonus() * 0.02 + (e.hp < e.maxHp * 0.4 ? 0.3 : 0);
+        if (R.chance(p)) { say(`You talk ${esc(e.full)} into walking away.`); killEnemy(e, 'spare'); G.spared++; tag('merciful'); }
+        else say(`${esc(e.full)} is not listening.`);
+        break;
+      }
+      case 'heal': healMe(20 + s.mag * 1.5); break;
+      case 'stun': await fist('#8b84a3'); hitEnemy(e, a() + 1 - e.def); if (e.alive) { e.frozen = 1; say(`${esc(e.full)} is stunned!`); } break;
+      case 'steal': {
+        burst(eb.cx, eb.cy, 'slash', '#6bbf59'); await sleep(200); hitEnemy(e, (a() + 1 - e.def) * 1.1);
+        const t = R.int(2, 4 + G.lvl); G.tokens += t; say(`You lift <b>${t}</b> tokens from its pockets.`);
+        break;
+      }
+      case 'burst': await allBoom(def.color || '#ff8a3a', 'bolt'); for (const x of alive()) hitEnemy(x, 4 + s.mag * 0.9 - x.def / 2); break;
+      case 'freeze': await bolt('#4fd8e8'); hitEnemy(e, 4 + s.mag * 0.9); if (e.alive) { e.frozen = 1; say(`${esc(e.full)} is frozen solid!`); } break;
+      case 'drain': { await bolt('#c8334a'); const d = Math.round(4 + s.mag * 1.1); hitEnemy(e, d); healMe(d); break; }
+      case 'poison': await bolt('#b8e05a'); hitEnemy(e, 2 + s.mag / 2); if (e.alive) { e.poison = 3; say(`${esc(e.full)} is poisoned!`); } break;
+      case 'multi':
+        for (let i = 0; i < 3 && e.alive; i++) { burst(eb.cx + R.int(-6, 6), eb.cy + R.int(-6, 6), 'star', '#f5c542'); await sleep(140); hitEnemy(e, (a() + 1) * 0.6 - e.def); }
+        break;
+      case 'song': burst(HERO_C.x, HERO_C.y, 'sparkle', '#ff5fa2'); B.buff.atk = (B.buff.atk || 0) + 3; addHype(1); say('The crowd sings along. +3 attack for this fight.'); break;
+      case 'rampage': for (const x of alive()) { const b = enemyBox(x); burst(b.cx, b.cy, 'slash', '#ff8a8a'); } await sleep(220); for (const x of alive()) hitEnemy(x, a() + 1 - x.def); break;
+      case 'crit': await bolt('#4fd8e8'); hitEnemy(e, (a() + 2) * 3, 'HEADSHOT! '); break;
+      case 'guard': burst(HERO_C.x, HERO_C.y, 'shield', '#8b84a3'); B.buff.def = (B.buff.def || 0) + 6; say('You plant your feet. +6 defense.'); healMe(10); break;
+      case 'blind':
+        for (const x of alive()) { const b = enemyBox(x); burst(b.cx, b.cy, 'star', '#e8dcc0'); }
+        await sleep(220);
+        for (const x of alive()) { if (R.chance(0.6)) { x.frozen = 1; say(`${esc(x.full)} can't see!`); } else say(`${esc(x.full)} blinks it off.`); }
+        break;
+      case 'curse': await bolt('#8a4fc9'); hitEnemy(e, 3 + s.mag); if (e.alive) { e.atk = Math.max(1, e.atk - 3); say(`${esc(e.full)} feels weaker. Its hits do 3 less.`); } break;
     }
     return;
   }
@@ -2043,7 +2213,7 @@ async function enemyTurn() {
   updateHud();
   if (checkEnd()) return;
   // Hurt cowardly mobs beg for their lives.
-  const beggar = alive().find((e) => !e.begged && !e.boss && e.traits.includes('cowardly') && e.hp <= e.maxHp * 0.35);
+  const beggar = alive().find((e) => !e.begged && !e.boss && e.traits.includes('cowardly') && e.hp <= e.maxHp * (0.35 + Math.max(0, chaBonus()) * 0.01));
   if (beggar) {
     beggar.begged = true;
     B.mercyTarget = beggar.id;
@@ -2204,6 +2374,7 @@ function gainXp(n) {
 }
 
 function endBattleReturn() {
+  textbox.classList.remove('picking');
   if (B && B.fled) G.buff = null;
   mode = 'map';
   B = null;
@@ -2341,7 +2512,7 @@ function drawMap() {
       if (m.members.length > 1) { ctx.fillStyle = '#1a1426'; ctx.fillRect(Math.round(m.px - camX) + 10, Math.round(m.py - camY), 7, 7); ctx.fillStyle = '#ff5fa2'; ctx.font = '7px monospace'; ctx.fillText('' + m.members.length, Math.round(m.px - camX) + 11, Math.round(m.py - camY) + 6); }
     } });
   }
-  actors.push({ y: heroDraw.y, fn: () => { shadow(heroDraw.x - camX, heroDraw.y - camY); draw(heroSprite(race(), cls(), face, heroFrame), heroDraw.x, heroDraw.y, heroFrame ? -1 : 0); } });
+  actors.push({ y: heroDraw.y, fn: () => { shadow(heroDraw.x - camX, heroDraw.y - camY); draw(heroSprite(race(), cls(), face, heroFrame, G.sex), heroDraw.x, heroDraw.y, heroFrame ? -1 : 0); } });
   actors.sort((a, b) => a.y - b.y).forEach((a) => a.fn());
   drawMiniMap();
 }
@@ -2440,7 +2611,7 @@ function drawBattle() {
     }
   }
   if (FX.heroFlash > 0) FX.heroFlash--;
-  if (FX.heroFlash % 4 < 2) ctx.drawImage(heroSprite(race(), cls(), 'right'), 28, 92, 48, 48);
+  if (FX.heroFlash % 4 < 2) ctx.drawImage(heroSprite(race(), cls(), 'right', 0, G.sex), 28, 92, 48, 48);
   drawFx();
 }
 function ellipse(cx, cy, rx, ry) { ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill(); }
