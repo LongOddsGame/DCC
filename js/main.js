@@ -2382,6 +2382,7 @@ function gainXp(n) {
 }
 
 function endBattleReturn() {
+  calmT = 0; regenAcc = 0;
   textbox.classList.remove('picking');
   if (B && B.fled) G.buff = null;
   mode = 'map';
@@ -2641,6 +2642,7 @@ function drawIdle() {
 }
 
 let lastT = performance.now();
+let calmT = 0, regenAcc = 0; // seconds since the last fight, and partial HP healed
 let hudTick = 0;
 function loop(now) {
   const dt = Math.min(0.1, (now - lastT) / 1000);
@@ -2651,6 +2653,17 @@ function loop(now) {
     if (canAct()) {
       G.playTime += dt;
       if (G.potionCd > 0) G.potionCd = Math.max(0, G.potionCd - dt);
+      // Out-of-combat healing, like most action RPGs: waits 5 seconds after a fight, eases in, then heals
+      // about 1 HP a second (1% of max HP a second once your max HP passes 100).
+      calmT += dt;
+      if (calmT > 5 && G.hp > 0) {
+        const max = stats().maxHp;
+        if (G.hp < max) {
+          const ease = Math.min(1, 0.5 + (calmT - 5) / 10);
+          regenAcc += dt * Math.max(1, max / 100) * ease;
+          if (regenAcc >= 1) { const h = Math.floor(regenAcc); regenAcc -= h; G.hp = Math.min(max, G.hp + h); }
+        } else regenAcc = 0;
+      }
       if (G.radar > 0) {
         G.radar -= dt;
         if (G.radar <= 0) { G.radar = 0; say('Your Mob Radar wore off.'); updateHud(); }
