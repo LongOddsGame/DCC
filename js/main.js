@@ -809,8 +809,35 @@ function equipNowHtml(id, back) {
 // ---------- Penny's shop: stock gets better as you level up ----------
 // Junk: gear worse than what you wear in that slot that no recipe needs. Never materials.
 const RECIPE_INPUTS = new Set(RECIPES.flatMap((r) => Object.keys(r.need)));
-function junkList() {
-  return G.order.filter((id) => count(id) > 0 && isGear(id) && !isEquipped(id) && !RECIPE_INPUTS.has(id) && gearScore(id) < gearScore(G.equip[ITEMS[id].type]));
+function knownScroll(id) { return ITEMS[id].type === 'scroll' && G.moves.includes(ITEMS[id].teaches); }
+function isJunk(id) {
+  if (knownScroll(id)) return true;
+  return isGear(id) && !isEquipped(id) && !RECIPE_INPUTS.has(id) && gearScore(id) < gearScore(G.equip[ITEMS[id].type]);
+}
+function junkList() { return G.order.filter((id) => count(id) > 0 && isJunk(id)); }
+// Would buying this make you stronger? Better than any gear you own for that slot, or a move you lack.
+function worthBuying(id) {
+  const it = ITEMS[id];
+  if (it.type === 'scroll') return !G.moves.includes(it.teaches) && !count(id);
+  if (!isGear(id)) return false;
+  const best = Math.max(0, ...ownedFor(it.type).map(gearScore));
+  return gearScore(id) > best;
+}
+// Something in your bag you can use to get stronger right now.
+// The best piece you own for a slot, if it beats what you wear. Only that one is flagged.
+function bestUpgrade(id) { return isUpgrade(id) && gearScore(id) >= Math.max(...ownedFor(ITEMS[id].type).map(gearScore)); }
+function actionable(id) {
+  const it = ITEMS[id];
+  if (bestUpgrade(id)) return true;
+  if (it.type === 'scroll' && !knownScroll(id)) return true;
+  if (it.type === 'box' && inSafe()) return true;
+  return false;
+}
+function badgeHtml(id) {
+  if (bestUpgrade(id)) return ' <span class="badge up">UPGRADE</span>';
+  if (ITEMS[id].type === 'scroll' && !knownScroll(id)) return ' <span class="badge new">NEW MOVE</span>';
+  if (isJunk(id)) return ' <span class="junk-tag">JUNK</span>';
+  return '';
 }
 function shopTier() { let t = 0; SHOP_TIERS.forEach((x, i) => { if (G.lvl >= x.lvl) t = i; }); return t; }
 function priceOf(id) {
@@ -857,8 +884,9 @@ function shopRow(id, special, bought) {
   const it = ITEMS[id];
   const p = priceOf(id);
   const gone = special && bought.includes(id);
-  return `<div class="item"><img src="${icon(id)}" alt="">
-    <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(it.name)}${count(id) ? ` <span class="have">have ${count(id)}</span>` : ''}</span>
+  const worth = !gone && worthBuying(id);
+  return `<div class="item ${worth ? 'worth' : ''}"><img src="${icon(id)}" alt="">
+    <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(it.name)}${worth ? (isGear(id) ? ' <span class="badge up">UPGRADE</span>' : ' <span class="badge new">NEW MOVE</span>') : ''}${count(id) ? ` <span class="have">have ${count(id)}</span>` : ''}</span>
     <span class="ds">${isGear(id) ? gearDescHtml(id) : esc(it.desc)}</span></div>
     <button class="act gold" data-act="buy" data-id="${id}" data-sp="${special ? 1 : 0}" ${gone || G.tokens < p ? 'disabled' : ''}>${gone ? 'Sold out' : p + ' tokens'}</button></div>`;
 }
@@ -869,14 +897,17 @@ function renderShop(extra = '') {
   if (shopState.tab === 'buy') {
     const st = shopStock();
     const bought = G.shopBought[stockKey()] || [];
-    body = `<h3 class="sub">SUPPLIES</h3><div class="items">${st.basics.map((id) => shopRow(id, false, bought)).join('')}</div>
-      <h3 class="sub">SPECIALS: ONE OF EACH</h3><div class="items">${st.specials.map((id) => shopRow(id, true, bought)).join('')}</div>`;
+    const worth = st.specials.filter((id) => !bought.includes(id) && worthBuying(id)).sort((a, b) => gearScore(b) - gearScore(a));
+    const rest = st.specials.filter((id) => !worth.includes(id));
+    body = `${worth.length ? `<h3 class="sub">WORTH BUYING: STRONGER THAN WHAT YOU HAVE</h3><div class="items">${worth.map((id) => shopRow(id, true, bought)).join('')}</div>` : '<p class="muted" style="font-size:14px">Nothing here beats the gear and moves you already have.</p>'}
+      <h3 class="sub">SUPPLIES</h3><div class="items">${st.basics.map((id) => shopRow(id, false, bought)).join('')}</div>
+      ${rest.length ? `<h3 class="sub">OTHER SPECIALS: ONE OF EACH</h3><div class="items">${rest.map((id) => shopRow(id, true, bought)).join('')}</div>` : ''}`;
   } else {
-    const ids = G.order.filter((id) => count(id) > 0 && !(isEquipped(id) && count(id) === 1));
+    const ids = G.order.filter((id) => count(id) > 0 && !(isEquipped(id) && count(id) === 1)).sort((a, b) => isJunk(b) - isJunk(a));
     const junk = junkList();
     const jv = junk.reduce((a, id) => a + count(id) * sellPrice(id), 0);
     body = `${junk.length ? `<button class="btn gold" data-act="selljunk">SELL ALL JUNK: ${junk.reduce((a, id) => a + count(id), 0)} ITEMS FOR ${jv} TOKENS</button>` : ''}
-      <p class="muted" style="font-size:14px">Junk is gear that is worse than what you are wearing and is not used in any crafting recipe. Crafting materials are never sold as junk.</p>
+      <p class="muted" style="font-size:14px">Junk is gear worse than what you wear that no recipe uses, plus scrolls for moves you already know. Crafting materials are never sold as junk.</p>
       <p class="muted" style="font-size:14px">Gear you are wearing is not listed. Junk is also used for crafting at the bench.</p>
       <div class="items">${ids.map((id) => {
         const it = ITEMS[id];
@@ -1433,7 +1464,9 @@ function sortedItems() {
   if (bagState.sort === 'new') ids = ids.slice().reverse();
   if (bagState.sort === 'rarity') ids = ids.slice().sort((a, b) => RARITY_ORDER.indexOf(ITEMS[a].rarity) - RARITY_ORDER.indexOf(ITEMS[b].rarity));
   if (bagState.sort === 'name') ids = ids.slice().sort((a, b) => ITEMS[a].name.localeCompare(ITEMS[b].name));
-  return ids.sort((a, b) => (G.favs[b] ? 1 : 0) - (G.favs[a] ? 1 : 0));
+  // Things you can use to get stronger now go first, junk goes last, favorites stay on top.
+  const rank = (id) => (G.favs[id] ? 0 : actionable(id) ? 1 : isJunk(id) ? 3 : 2);
+  return ids.sort((a, b) => rank(a) - rank(b));
 }
 // Returns [label, enabled, note]
 function itemAction(id) {
@@ -1441,7 +1474,7 @@ function itemAction(id) {
   const safe = inSafe();
   if (it.type === 'box') return safe ? ['Open', true] : ['Open', false, 'Safe room only'];
   if (it.type === 'scroll') {
-    if (G.moves.includes(it.teaches)) return [null, false, 'Already known'];
+    if (G.moves.includes(it.teaches)) return [null, false, 'Already known. Sell it to Penny as junk.'];
     return safe ? ['Learn', true] : ['Learn', false, 'Safe room only'];
   }
   if (it.type === 'potion' || it.type === 'food') return ['Use', true];
@@ -1460,7 +1493,7 @@ function renderBag(extra = '') {
     const eq = isEquipped(id);
     const side = it.type === 'potion' && G.sideFx[id] !== undefined ? ' Side effect: ' + SIDE_EFFECTS[G.sideFx[id]].text : '';
     return `<div class="item"><img src="${icon(id)}" alt="">
-      <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))} x${count(id)} ${eq ? '<span class="equipped">EQUIPPED</span>' : ''}</span><span class="ds">${isGear(id) ? gearDescHtml(id) : esc(it.desc + side)}${note ? ` <b style="color:var(--pink)">${esc(note)}</b>` : ''}</span></div>
+      <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))} x${count(id)} ${eq ? '<span class="equipped">EQUIPPED</span>' : ''}${badgeHtml(id)}</span><span class="ds">${isGear(id) ? gearDescHtml(id) : esc(it.desc + side)}${note ? ` <b style="color:var(--pink)">${esc(note)}</b>` : ''}</span></div>
       <button class="star ${G.favs[id] ? 'on' : ''}" data-act="fav" data-id="${id}" aria-label="Favorite">★</button>
       ${act ? `<button class="act" data-act="use" data-id="${id}" ${ok ? '' : 'disabled'}>${act}</button>` : ''}</div>`;
   }).join('') || '<p class="muted">Nothing here yet.</p>';
