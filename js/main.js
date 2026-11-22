@@ -2610,14 +2610,14 @@ function drawBattle() {
       if (e.frozen > 0) { ctx.globalAlpha = 0.4; ctx.fillStyle = '#4fd8e8'; ctx.fillRect(x + 2, y + 2, size - 4, size - 4); ctx.globalAlpha = 1; }
     }
     if (e.alive) {
-      ctx.fillStyle = '#1a1426'; ctx.fillRect(x + 2, y + size + 2, size - 4, 4);
+      // HP numbers, then the health bar, then the XP the mob is worth.
+      ctx.fillStyle = '#1a1426'; ctx.fillRect(x + 2, y + size + 9, size - 4, 4);
       ctx.fillStyle = e.hp / e.maxHp > 0.35 ? '#6bbf59' : '#c8334a';
-      ctx.fillRect(x + 3, y + size + 3, Math.max(0, (size - 6) * (e.hp / e.maxHp)), 2);
+      ctx.fillRect(x + 3, y + size + 10, Math.max(0, (size - 6) * (e.hp / e.maxHp)), 2);
       if (B.phase === 'target') { ctx.fillStyle = '#4fd8e8'; ctx.fillRect(x + size / 2 - 3, y - 6 - ((frame >> 3) % 2), 6, 3); ctx.fillRect(x + size / 2 - 1, y - 3 - ((frame >> 3) % 2), 2, 2); }
       if (e.elite) { ctx.fillStyle = '#f5c542'; ctx.fillRect(x + size / 2 - 4, y - 2, 8, 2); }
-      // Health numbers and XP value under each mob.
       ctx.font = '8px Tiny5, monospace'; ctx.textAlign = 'left';
-      const lines = [[Math.max(0, e.hp) + '/' + e.maxHp + ' HP', '#fff6e0', 14], [xpFor(e) + ' XP', '#f5c542', 22]];
+      const lines = [[Math.max(0, e.hp) + '/' + e.maxHp + ' HP', '#fff6e0', 7], [xpFor(e) + ' XP', '#f5c542', 21]];
       for (const [t, col, dy] of lines) {
         const tx = Math.round(x + size / 2 - ctx.measureText(t).width / 2), ty = Math.round(y + size + dy);
         ctx.fillStyle = '#1a1426'; ctx.fillText(t, tx + 1, ty + 1); ctx.fillStyle = col; ctx.fillText(t, tx, ty);
