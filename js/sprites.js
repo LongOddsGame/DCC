@@ -139,6 +139,7 @@ const POTION_COLORS = {
   potion_mana: { r: '#4fd8e8', R: '#3a6ea5' },
   potion_mystery: { r: '#c49af0', R: '#8a4fc9' },
   potion_radar: { r: '#ff5fa2', R: '#8a4fc9', w: '#4fd8e8' },
+  potion_path: { r: '#b8e05a', R: '#2f7a3c', w: '#fff6e0' },
 };
 
 const ARMOR_COLORS = {

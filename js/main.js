@@ -235,6 +235,7 @@ function loadSlot(i) {
   if (!byId(CLASSES, G.cls)) G.cls = 'brawler';
   if (!G.perks) G.perks = LEGACY_PERK[G.job] ? [LEGACY_PERK[G.job]] : [];
   G.radar = G.radar || 0;
+  G.guide = G.guide || 0; guidePath = null;
   G.respawnT = G.respawnT || 0;
   G.spawnCount = G.spawnCount || 0;
   G.tutSeen = G.tutSeen || {};
@@ -255,6 +256,7 @@ function updateHud() {
   $('hud-floor').textContent = G.floor === 0 ? 'TUTORIAL' : 'F' + G.floor + ' THE LOBBY';
   const tEl = $('hud-timer');
   if (G.radar > 0) { tEl.textContent = 'RADAR ' + Math.ceil(G.radar) + 's'; tEl.classList.toggle('warn', G.radar <= 10); }
+  else if (G.guide > 0) { tEl.textContent = 'COMPASS ' + Math.ceil(G.guide) + 's'; tEl.classList.toggle('warn', G.guide <= 10); }
   else { tEl.textContent = FL && !FL.tutorial ? 'BOSS ' + G.bossesDead.length + '/2' : ''; tEl.classList.remove('warn'); }
   $('hud-odds').textContent = Math.max(1, Math.round(G.odds)) + ' TO 1';
   $('hp-fill').style.width = clamp((G.hp / s.maxHp) * 100, 0, 100) + '%';
@@ -1506,6 +1508,12 @@ function openFullMap() {
   for (const r of FL.safeRooms) if (!seen(r.cx, r.cy)) g.fillRect(r.x, r.y, r.w, r.h);
   for (const b of FL.bosses) if (!G.bossesDead.includes(b.id) && seen(b.x, b.y)) { g.fillStyle = '#c8334a'; g.fillRect(b.x - 2, b.y - 2, 5, 5); }
   if (G.radar > 0) { g.fillStyle = '#ff5fa2'; for (const m of mobsLive) g.fillRect(m.x - 1, m.y - 1, 3, 3); }
+  if (guidePath) {
+    g.fillStyle = '#b8e05a';
+    for (const i of guidePath) g.fillRect(i % FL.w, (i / FL.w) | 0, 1, 1);
+    const gb = guideBoss();
+    if (gb) { g.fillStyle = '#c8334a'; g.fillRect(gb.x - 2, gb.y - 2, 5, 5); }
+  }
   g.fillStyle = '#4fd8e8'; g.fillRect(G.pos.x - 3, G.pos.y - 3, 7, 7);
   g.fillStyle = '#fff6e0'; g.fillRect(G.pos.x - 1, G.pos.y - 1, 3, 3);
   // A close-up around you.
@@ -1522,8 +1530,51 @@ function openFullMap() {
     <img src="${zc.toDataURL()}" alt="Map close to you" style="width:100%; image-rendering:pixelated; border:3px solid var(--edge)">
     <p class="muted" style="font-size:15px">Whole floor</p>
     <img src="${big.toDataURL()}" alt="Whole floor map" style="width:100%; image-rendering:pixelated; border:3px solid var(--edge)">
-    <p style="font-size:15px"><span style="color:#4fd8e8">■</span> You · <span style="color:#b8693a">■</span> Safe rooms (${found} of ${FL.safeRooms.length} visited) · <span style="color:#c8334a">■</span> Bosses you found · <span style="color:#f5c542">■</span> Stairs${G.radar > 0 ? ' · <span style="color:#ff5fa2">■</span> Mobs (radar)' : ''}</p>
+    <p style="font-size:15px"><span style="color:#4fd8e8">■</span> You · <span style="color:#b8693a">■</span> Safe rooms (${found} of ${FL.safeRooms.length} visited) · <span style="color:#c8334a">■</span> Bosses you found · <span style="color:#f5c542">■</span> Stairs${G.radar > 0 ? ' · <span style="color:#ff5fa2">■</span> Mobs (radar)' : ''}${guidePath ? ' · <span style="color:#b8e05a">■</span> Way to the boss' : ''}</p>
     <button class="btn grey" data-act="closebag" style="position:sticky; bottom:0">CLOSE</button>`);
+}
+
+// ---------- Boss Compass ----------
+// A walking path from you to the nearest living boss, found with a breadth-first search.
+let guidePath = null, guideTarget = null, guideFrom = -1, guideT = 0;
+function guideBoss() { return guideTarget && !G.bossesDead.includes(guideTarget.id) ? guideTarget : null; }
+function findBossPath() {
+  const W = FL.w, N = W * FL.h;
+  const goal = new Map();
+  for (const b of FL.bosses) if (!G.bossesDead.includes(b.id)) for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) if (walkable(FL, b.x + dx, b.y + dy)) goal.set((b.y + dy) * W + b.x + dx, b);
+  if (!goal.size) return null;
+  const prev = new Int32Array(N).fill(-1);
+  const q = new Int32Array(N);
+  const start = G.pos.y * W + G.pos.x;
+  let h = 0, t = 0;
+  q[t++] = start; prev[start] = start;
+  while (h < t) {
+    const c = q[h++];
+    if (goal.has(c)) {
+      const path = [];
+      for (let p = c; p !== start; p = prev[p]) path.push(p);
+      return { path, boss: goal.get(c) };
+    }
+    const x = c % W, y = (c / W) | 0;
+    for (const n of [c - 1, c + 1, c - W, c + W]) {
+      if (n < 0 || n >= N || prev[n] !== -1) continue;
+      if ((n === c - 1 && x === 0) || (n === c + 1 && x === W - 1)) continue;
+      if (FL.tiles[n] === T.WALL) continue;
+      prev[n] = c; q[t++] = n;
+    }
+  }
+  return null;
+}
+// Recomputes the trail when you move (at most twice a second).
+function updateGuide(force = false) {
+  if (!(G.guide > 0) || FL.tutorial) { guidePath = null; return; }
+  const here = G.pos.y * FL.w + G.pos.x;
+  guideT -= 1 / 60;
+  if (!force && (here === guideFrom || guideT > 0)) return;
+  guideT = 0.5; guideFrom = here;
+  const r = findBossPath();
+  guidePath = r ? r.path : null; guideTarget = r ? r.boss : null;
+  if (!r) { G.guide = 0; say('No bosses left. Your Boss Compass fades.'); updateHud(); }
 }
 
 // ---------- Bag ----------
@@ -1648,6 +1699,15 @@ function consume(id) {
     if (r === 2) { setBuff('atk', 3); say('You feel STRONG. +3 attack for your next fight.'); }
     if (r === 3) { G.hp = Math.max(1, G.hp - 6); say('Ugh. It was mostly drain cleaner. -6 HP.'); }
   }
+  if (it.guide) {
+    if (FL.tutorial || !FL.bosses.some((b) => !G.bossesDead.includes(b.id))) say('The potion fizzes. There are no bosses left to find here.');
+    else {
+      G.guide = (G.guide > 0 ? G.guide : 0) + it.guide;
+      updateGuide(true);
+      const b = guideBoss();
+      say(`<span class="good">Boss Compass on!</span> A green trail on your map leads to ${b ? esc(BOSSES[b.type].name) + ', ' + whereIs(b) : 'the nearest boss'}. Lasts ${Math.round(G.guide)} seconds of play.`);
+    }
+  }
   if (it.radar) {
     G.radar = (G.radar > 0 ? G.radar : 0) + it.radar * (hasPerk('nerd') ? 2 : 1);
     say(`<span class="good">Mob Radar on!</span> Every mob shows on your map for ${Math.round(G.radar)} seconds. Pausing stops the clock.`);
@@ -1670,7 +1730,7 @@ function consume(id) {
 // Potion cooldown: 15 seconds of play on the map, or once every 2 turns in a fight.
 // Mob Radar is not a drink for healing, so it has no cooldown.
 const POTION_CD = 15;
-function cooled(id) { return ITEMS[id].type === 'potion' && !ITEMS[id].radar; }
+function cooled(id) { return ITEMS[id].type === 'potion' && !ITEMS[id].radar && !ITEMS[id].guide; }
 function potionWait(id) {
   if (!cooled(id)) return '';
   if (B) { const t = 2 - (B.turn - (B.lastPotion ?? -99)); return t > 0 ? `Ready in ${t} turn${t > 1 ? 's' : ''}` : ''; }
@@ -2382,7 +2442,7 @@ function gainXp(n) {
 }
 
 function endBattleReturn() {
-  calmT = 0; regenAcc = 0;
+  calmT = 0; regenAcc = 0; guideFrom = -1;
   textbox.classList.remove('picking');
   if (B && B.fled) G.buff = null;
   mode = 'map';
@@ -2545,6 +2605,12 @@ function drawMiniMap() {
   }
   const inMini = (p) => p.x >= ox && p.x < ox + MW && p.y >= oy && p.y < oy + MH;
   for (const b of FL.bosses) if (!G.bossesDead.includes(b.id) && seen(b.x, b.y) && inMini(b)) { ctx.fillStyle = '#c8334a'; ctx.fillRect(sx + b.x - ox - 1, sy + b.y - oy - 1, 3, 3); }
+  if (guidePath) {
+    ctx.fillStyle = '#b8e05a';
+    for (const i of guidePath) { const gx = i % FL.w, gy = (i / FL.w) | 0; if (inMini({ x: gx, y: gy })) ctx.fillRect(sx + gx - ox, sy + gy - oy, 1, 1); }
+    const gb = guideBoss();
+    if (gb && inMini(gb)) { ctx.fillStyle = '#c8334a'; ctx.fillRect(sx + gb.x - ox - 1, sy + gb.y - oy - 1, 3, 3); }
+  }
   if (G.radar > 0 && (frame >> 3) % 2) { ctx.fillStyle = '#ff5fa2'; for (const m of mobsLive) if (inMini(m)) ctx.fillRect(sx + m.x - ox, sy + m.y - oy, 1, 1); }
   if ((frame >> 4) % 2 === 0) { ctx.fillStyle = '#4fd8e8'; ctx.fillRect(sx + G.pos.x - ox - 1, sy + G.pos.y - oy - 1, 3, 3); }
 }
@@ -2664,6 +2730,11 @@ function loop(now) {
           if (regenAcc >= 1) { const h = Math.floor(regenAcc); regenAcc -= h; G.hp = Math.min(max, G.hp + h); }
         } else regenAcc = 0;
       }
+      if (G.guide > 0) {
+        G.guide -= dt;
+        if (G.guide <= 0) { G.guide = 0; guidePath = null; say('Your Boss Compass wore off.'); updateHud(); }
+        else updateGuide();
+      }
       if (G.radar > 0) {
         G.radar -= dt;
         if (G.radar <= 0) { G.radar = 0; say('Your Mob Radar wore off.'); updateHud(); }
@@ -2689,7 +2760,7 @@ showTitle();
 requestAnimationFrame(loop);
 
 // For automated tests.
-window.__longodds = { get G() { return G; }, get FL() { return FL; }, get mode() { return mode; }, get B() { return B; }, mobsLive: () => mobsLive, seen: (x, y) => seen(x, y) };
+window.__longodds = { get guidePath() { return guidePath; }, get G() { return G; }, get FL() { return FL; }, get mode() { return mode; }, get B() { return B; }, mobsLive: () => mobsLive, seen: (x, y) => seen(x, y) };
 
 // Tapping the mini map opens the full-screen map.
 canvas.addEventListener('click', (e) => {
