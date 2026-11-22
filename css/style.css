@@ -234,3 +234,4 @@ textarea { width: 100%; font-family: var(--body); font-size: 18px; line-height: 
 .sheet-what { font-size: 13px; color: var(--muted); }
 .sheet-src { font-size: 13px; display: flex; flex-wrap: wrap; gap: 0 8px; color: var(--paper); }
 .sheet-src .up { color: var(--green); } .sheet-src .down { color: #ff8a8a; }
+.foe .xpv { color: var(--gold); font-size: 12px; }

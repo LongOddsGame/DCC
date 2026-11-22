@@ -1952,7 +1952,7 @@ function fightOptHtml(o) {
 }
 
 function renderBattleControls() {
-  const foes = `<div class="foes">${B.enemies.map((e) => `<div class="foe ${e.alive ? '' : 'dead'}"><span><span class="nm">${esc(e.full)}</span> <span class="muted">${Math.max(0, e.hp)}/${e.maxHp}</span>${e.traits.length ? `<br><span class="tr">${e.traits.map((t) => esc(TRAITS[t].desc)).join(' · ')}</span>` : ''}${e.poison ? ' <span class="tr" style="color:#b8e05a">Poisoned</span>' : ''}</span><span class="in">${esc(intentText(e))}</span></div>`).join('')}</div>`;
+  const foes = `<div class="foes">${B.enemies.map((e) => `<div class="foe ${e.alive ? '' : 'dead'}"><span><span class="nm">${esc(e.full)}</span> <span class="muted">${Math.max(0, e.hp)}/${e.maxHp}</span> <span class="xpv">${xpFor(e)} XP</span>${e.traits.length ? `<br><span class="tr">${e.traits.map((t) => esc(TRAITS[t].desc)).join(' · ')}</span>` : ''}${e.poison ? ' <span class="tr" style="color:#b8e05a">Poisoned</span>' : ''}</span><span class="in">${esc(intentText(e))}</span></div>`).join('')}</div>`;
   let btns = '';
   if (B.phase === 'menu') {
     btns = `<div class="grid2">
@@ -2307,6 +2307,14 @@ function checkEnd() {
   return true;
 }
 
+// XP a mob is worth to you, with your XP bonuses.
+function xpFor(e) {
+  let x = e.xp;
+  if (hasPerk('learner')) x *= 1.25;
+  const p = stats().xpPct;
+  if (p) x *= 1 + p / 100;
+  return Math.round(x);
+}
 function victory() {
   const s = stats();
   let xp = 0, tokens = 0;
@@ -2607,6 +2615,13 @@ function drawBattle() {
       ctx.fillRect(x + 3, y + size + 3, Math.max(0, (size - 6) * (e.hp / e.maxHp)), 2);
       if (B.phase === 'target') { ctx.fillStyle = '#4fd8e8'; ctx.fillRect(x + size / 2 - 3, y - 6 - ((frame >> 3) % 2), 6, 3); ctx.fillRect(x + size / 2 - 1, y - 3 - ((frame >> 3) % 2), 2, 2); }
       if (e.elite) { ctx.fillStyle = '#f5c542'; ctx.fillRect(x + size / 2 - 4, y - 2, 8, 2); }
+      // Health numbers and XP value under each mob.
+      ctx.font = '8px Tiny5, monospace'; ctx.textAlign = 'left';
+      const lines = [[Math.max(0, e.hp) + '/' + e.maxHp + ' HP', '#fff6e0', 14], [xpFor(e) + ' XP', '#f5c542', 22]];
+      for (const [t, col, dy] of lines) {
+        const tx = Math.round(x + size / 2 - ctx.measureText(t).width / 2), ty = Math.round(y + size + dy);
+        ctx.fillStyle = '#1a1426'; ctx.fillText(t, tx + 1, ty + 1); ctx.fillStyle = col; ctx.fillText(t, tx, ty);
+      }
       if (e.intent === 'heavy' && (frame >> 3) % 2) { ctx.fillStyle = '#ff5fa2'; ctx.fillRect(x + size - 4, y, 2, 6); ctx.fillRect(x + size - 4, y + 8, 2, 2); }
     }
   }
