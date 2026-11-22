@@ -1,4 +1,4 @@
-// The build script replaces __BUILD_VERSION__ with 1.0.0.YYYYMMDD.HHMM on every deploy.
+// The build script replaces __BUILD_VERSION__ with 1.0.N.YYYYMMDD.HHMM on every deploy (N goes up by one each release).
 const RAW = '__BUILD_VERSION__';
 export const VERSION = RAW.startsWith('__') ? '1.0.0.dev' : RAW;
 
