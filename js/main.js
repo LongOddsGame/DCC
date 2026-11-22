@@ -1,7 +1,7 @@
 // Long Odds prototype. Game state, map, battles, bag, safe room and screens.
 import { R, makeRng, newSeed } from './rng.js?v=__BUILD_VERSION__';
 import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, GEAR_TYPES, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, RECIPES, SCHOOL_NAMES } from './data.js?v=__BUILD_VERSION__';
-import { generateFloor, tutorialFloor, roomAt, makeGroup, walkable, tileAt, T, key } from './dungeon.js?v=__BUILD_VERSION__';
+import { generateFloor, tutorialFloor, roomAt, makeGroup, walkable, tileAt, stageAt, T, key } from './dungeon.js?v=__BUILD_VERSION__';
 import { sprite, heroSprite, flipped, docSprite, boxSprite, mobSprite, itemIcon, slotIcon } from './sprites.js?v=__BUILD_VERSION__';
 import { SLOT_COUNT, readSlot, writeSlot, deleteSlot, listSlots } from './save.js?v=__BUILD_VERSION__';
 import { VERSION, checkForUpdate, installUpdate } from './version.js?v=__BUILD_VERSION__';
@@ -189,7 +189,7 @@ function docMood() {
 function newGame(slot, name, jobId, raceId, clsId, tutorial = true, perks = [], sex = 'm') {
   const seed = newSeed();
   G = {
-    v: 2, slot, name, sex, job: jobId, perks: perks.slice(), race: raceId, cls: clsId, seed, floor: tutorial ? 0 : 1,
+    v: 3, slot, name, sex, job: jobId, perks: perks.slice(), race: raceId, cls: clsId, seed, floor: tutorial ? 0 : 1,
     lvl: 1, xp: 0, hp: 0, mp: 0, tokens: 5,
     inv: {}, order: [], favs: {}, equip: emptyEquip(),
     pos: null, moves: [], radar: 0, respawnT: 0, spawnCount: 0, tutSeen: {}, seen: '', shopBought: {},
@@ -248,8 +248,9 @@ function loadSlot(i) {
   G.tutSeen = G.tutSeen || {};
   G.shopBought = G.shopBought || {};
   if (!G.bossesDead) G.bossesDead = G.bossDead ? ['b1'] : [];
-  const oldWorld = (G.v || 1) < 2;
-  if (oldWorld) { G.opened = []; G.killed = []; G.seen = ''; G.bossesDead = []; G.cleared = false; G.v = 2; }
+  // Version 3 floors are built in stages, so older floors start fresh (your hero and items stay).
+  const oldWorld = (G.v || 1) < 3;
+  if (oldWorld) { G.opened = []; G.killed = []; G.seen = ''; G.bossesDead = []; G.cleared = false; G.v = 3; }
   delete G.timeLeft; delete G.timerWarn; delete G.bossDead;
   buildFloor();
   if (oldWorld || !G.pos || !walkable(FL, G.pos.x, G.pos.y)) G.pos = { ...FL.start };
@@ -264,7 +265,7 @@ function updateHud() {
   const tEl = $('hud-timer');
   if (G.radar > 0) { tEl.textContent = 'RADAR ' + Math.ceil(G.radar) + 's'; tEl.classList.toggle('warn', G.radar <= 10); }
   else if (G.guide > 0) { tEl.textContent = 'COMPASS ' + Math.ceil(G.guide) + 's'; tEl.classList.toggle('warn', G.guide <= 10); }
-  else { tEl.textContent = FL && !FL.tutorial ? 'BOSS ' + G.bossesDead.length + '/2' : ''; tEl.classList.remove('warn'); }
+  else { tEl.textContent = FL && !FL.tutorial ? (FL.stages && stageAt(FL, G.pos.x) < FL.stages.length - 1 ? 'STAGE ' + (stageAt(FL, G.pos.x) + 1) + '/' + FL.stages.length : 'BOSS ' + G.bossesDead.length + '/2') : ''; tEl.classList.remove('warn'); }
   $('hud-odds').textContent = Math.max(1, Math.round(G.odds)) + ' TO 1';
   $('hp-fill').style.width = clamp((G.hp / s.maxHp) * 100, 0, 100) + '%';
   $('mp-fill').style.width = clamp((G.mp / s.maxMp) * 100, 0, 100) + '%';
@@ -1196,7 +1197,7 @@ function enterMap(fresh) {
   } else if (fresh) {
     bookie(R.pick(BOOKIE.welcome));
     say(`<b>Floor rule: ${esc(FL.rule.name).toUpperCase()}.</b> ${esc(FL.rule.text)}`);
-    say('This floor is huge. Find and beat both bosses to unlock the stairs. Brown squares on your map are safe rooms.');
+    say('This floor has 4 stages, left to right. Beat the Gatekeeper at the end of each stage to open the next one. Both bosses and the stairs are in Stage 4.');
   } else {
     bookie('Welcome back, ' + G.name + '. The cameras never stopped rolling.');
   }
@@ -1343,6 +1344,7 @@ function indexObjects() {
   for (const b of FL.shops || []) objIndex.set(key(b), 'shop');
   for (const b of FL.bosses) if (!G.bossesDead.includes(b.id)) objIndex.set(key(b), b);
   for (const c of FL.chests) if (!G.opened.includes(c.id)) objIndex.set(key(c), c);
+  for (const g of FL.gates || []) if (!G.killed.includes(g.keeper)) objIndex.set(key(g), g);
 }
 let lastObjAt = '';
 function objectAt(x, y) { const o = objIndex.get(x + ',' + y) || null; if (o) lastObjAt = x + ',' + y; return o; }
@@ -1476,6 +1478,7 @@ function interact(obj) {
     ]);
   }
   if (obj.tier) return openChest(obj);
+  if (obj.keeper) return bookie(`Locked! Beat the Gatekeeper standing guard here to open the way to Stage ${obj.stage + 2}.`);
 }
 
 function openChest(ch) {
@@ -1519,23 +1522,29 @@ function openFullMap() {
     const gb = guideBoss();
     if (gb) { g.fillStyle = '#c8334a'; g.fillRect(gb.x - 2, gb.y - 2, 5, 5); }
   }
+  for (const gt of FL.gates || []) if (!G.killed.includes(gt.keeper)) { g.fillStyle = '#c8334a'; g.fillRect(gt.x, gt.y - 2, 1, 5); }
   g.fillStyle = '#4fd8e8'; g.fillRect(G.pos.x - 3, G.pos.y - 3, 7, 7);
   g.fillStyle = '#fff6e0'; g.fillRect(G.pos.x - 1, G.pos.y - 1, 3, 3);
-  // A close-up around you.
-  const Z = 60, zs = 4;
+  // The stage you are in, drawn big. Older or practice floors show a close-up around you instead.
+  const st = FL.stages ? FL.stages[stageAt(FL, G.pos.x)] : null;
+  const area = st ? { x: st.x - 1, y: st.y - 1, w: st.w + 2, h: st.h + 2 } : { x: G.pos.x - 60, y: G.pos.y - 40, w: 120, h: 80 };
+  const zs = 4;
   const zc = document.createElement('canvas');
-  zc.width = Z * 2 * zs; zc.height = Z * 2 * zs;
+  zc.width = area.w * zs; zc.height = area.h * zs;
   const zg = zc.getContext('2d');
   zg.imageSmoothingEnabled = false;
-  zg.drawImage(big, G.pos.x - Z, G.pos.y - Z, Z * 2, Z * 2, 0, 0, Z * 2 * zs, Z * 2 * zs);
+  zg.drawImage(big, area.x, area.y, area.w, area.h, 0, 0, area.w * zs, area.h * zs);
+  const stageNote = st ? (st.i < FL.stages.length - 1
+    ? (G.killed.includes(FL.gates[st.i].keeper) ? 'The gate on the right is open. Head east to the next stage.' : 'Goal: reach the gate on the far right (red line) and beat its Gatekeeper.')
+    : 'Final stage: beat both bosses, then take the stairs (gold).') : '';
   const found = FL.safeRooms.filter((r) => seen(r.cx, r.cy)).length;
   showOverlay(`
     <div class="row-between"><h2>MAP</h2><span class="muted" style="font-size:14px">${FL.tutorial ? 'Practice room' : FL.w + ' x ' + FL.h + ' tiles'}</span></div>
-    <p class="muted" style="font-size:15px">Close-up around you</p>
-    <img src="${zc.toDataURL()}" alt="Map close to you" style="width:100%; image-rendering:pixelated; border:3px solid var(--edge)">
-    <p class="muted" style="font-size:15px">Whole floor</p>
+ <p style="font-size:15px">${st ? `<b style="color:var(--gold)">STAGE ${st.i + 1} OF ${FL.stages.length}.</b> ${stageNote}` : 'Close-up around you'}</p>
+    <img src="${zc.toDataURL()}" alt="Map of this stage" style="width:100%; image-rendering:pixelated; border:3px solid var(--edge)">
+    <p class="muted" style="font-size:15px">Whole floor${st ? ': 4 stages, left to right' : ''}</p>
     <img src="${big.toDataURL()}" alt="Whole floor map" style="width:100%; image-rendering:pixelated; border:3px solid var(--edge)">
-    <p style="font-size:15px"><span style="color:#4fd8e8">■</span> You · <span style="color:#b8693a">■</span> Safe rooms (${found} of ${FL.safeRooms.length} visited) · <span style="color:#c8334a">■</span> Bosses you found · <span style="color:#f5c542">■</span> Stairs${G.radar > 0 ? ' · <span style="color:#ff5fa2">■</span> Mobs (radar)' : ''}${guidePath ? ' · <span style="color:#b8e05a">■</span> Way to the boss' : ''}</p>
+    <p style="font-size:15px"><span style="color:#4fd8e8">■</span> You · <span style="color:#b8693a">■</span> Safe rooms (${found} of ${FL.safeRooms.length} visited) · <span style="color:#c8334a">■</span> Bosses you found · <span style="color:#f5c542">■</span> Stairs${FL.gates ? ' · <span style="color:#c8334a">|</span> Locked gates' : ''}${G.radar > 0 ? ' · <span style="color:#ff5fa2">■</span> Mobs (radar)' : ''}${guidePath ? ' · <span style="color:#b8e05a">■</span> Way to the boss' : ''}</p>
     <button class="btn grey" data-act="closebag" style="position:sticky; bottom:0">CLOSE</button>`);
 }
 
@@ -1816,7 +1825,7 @@ function openMenu(force = false) {
     <p><b>Moves:</b> ${esc(moves)}</p>
     <p><b>Enhancements:</b> ${(G.perks || []).map((p) => `${esc(PERKS[p].name)} (${esc(PERKS[p].desc)})`).join(', ') || 'none'}</p>
     <p><b>${esc(race().name)}:</b> ${esc(race().desc)}</p>
-    ${FL.tutorial ? '' : `<p><b>Bosses left:</b> ${bossesLeft} of ${FL.bosses.length}. <b>Floor rule:</b> ${esc(FL.rule.name)}. ${esc(FL.rule.text)}</p>`}
+    ${FL.tutorial ? '' : `<p>${FL.stages ? `<b>Stage:</b> ${stageAt(FL, G.pos.x) + 1} of ${FL.stages.length}. ` : ''}<b>Bosses left:</b> ${bossesLeft} of ${FL.bosses.length}. <b>Floor rule:</b> ${esc(FL.rule.name)}. ${esc(FL.rule.text)}</p>`}
     <p>${G.doc.met ? esc(docWords) : FL.tutorial ? 'You will meet people on the real floors.' : 'You have not met anyone yet. Doc works in the safe room closest to the start.'}</p>
     <p class="muted">The game saves when you walk into a safe room or use a camera booth.</p>
     <button class="btn green" data-act="closebag">RESUME</button>
@@ -2424,7 +2433,13 @@ function victory() {
   for (const id of B.stolen) { addItem(id, 1, true); say(`You got your ${esc(ITEMS[id].name)} back.`); }
   gainXp(xp);
   if (B.mob) {
-    if (B.mob.id[0] === 'm' || B.mob.id[0] === 't') G.killed.push(B.mob.id);
+    if (B.mob.id[0] === 'm' || B.mob.id[0] === 't' || B.mob.id[0] === 'g') G.killed.push(B.mob.id);
+    if (B.mob.gate !== undefined) {
+      indexObjects();
+      say(`<span class="good">The gate to Stage ${B.mob.gate + 2} swings open!</span>`);
+      bookie(B.mob.gate + 2 === 4 ? 'Final stage! Both bosses and the stairs are through that gate.' : `Stage ${B.mob.gate + 2}, here we go. The Patrons just raised the stakes.`);
+      save();
+    }
     mobsLive = mobsLive.filter((m) => m !== B.mob);
   }
   G.odds = Math.max(1, G.odds);
@@ -2566,6 +2581,13 @@ function drawMap() {
   for (const b of FL.booths) if (onScreen(b) && seen(b.x, b.y)) draw(sprite('bookie'), b.x * 16, b.y * 16, bob);
   for (const b of FL.shops || []) if (onScreen(b) && seen(b.x, b.y)) draw(sprite('shop'), b.x * 16, b.y * 16, 0);
   if (onScreen(FL.doc) && seen(FL.doc.x, FL.doc.y)) draw(docSprite(), FL.doc.x * 16, FL.doc.y * 16);
+  for (const g of FL.gates || []) if (onScreen(g) && seen(g.x, g.y) && !G.killed.includes(g.keeper)) {
+    const gx = g.x * 16 - camX, gy = g.y * 16 - camY;
+    ctx.fillStyle = '#1a1426'; ctx.fillRect(gx, gy, 16, 16);
+    ctx.fillStyle = '#8b84a3'; for (let i = 1; i < 16; i += 4) ctx.fillRect(gx + i, gy, 2, 16);
+    ctx.fillStyle = '#5a5373'; ctx.fillRect(gx, gy + 4, 16, 2); ctx.fillRect(gx, gy + 11, 16, 2);
+    ctx.fillStyle = '#f5c542'; ctx.fillRect(gx + 6, gy + 7, 4, 3); ctx.fillStyle = '#1a1426'; ctx.fillRect(gx + 7, gy + 8, 2, 1);
+  }
   for (const b of FL.bosses) if (onScreen(b) && !G.bossesDead.includes(b.id) && seen(b.x, b.y)) draw(sprite(BOSSES[b.type].sprite), b.x * 16, b.y * 16, bob);
   // Characters are drawn back to front so nearer ones overlap farther ones, each on a soft shadow.
   const actors = [];
@@ -2609,6 +2631,7 @@ function drawMiniMap() {
     ctx.fillRect(sx + x, sy + y, 1, 1);
   }
   const inMini = (p) => p.x >= ox && p.x < ox + MW && p.y >= oy && p.y < oy + MH;
+  for (const g of FL.gates || []) if (inMini(g) && !G.killed.includes(g.keeper)) { ctx.fillStyle = '#c8334a'; ctx.fillRect(sx + g.x - ox, sy + g.y - oy - 1, 1, 3); }
   for (const b of FL.bosses) if (!G.bossesDead.includes(b.id) && seen(b.x, b.y) && inMini(b)) { ctx.fillStyle = '#c8334a'; ctx.fillRect(sx + b.x - ox - 1, sy + b.y - oy - 1, 3, 3); }
   if (guidePath) {
     ctx.fillStyle = '#b8e05a';
