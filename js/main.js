@@ -112,6 +112,11 @@ function rollLoot(boxId) {
       if (roll <= 0) { got.push([id, R.int(mn, mx)]); break; }
     }
   }
+  const tier = { box_gold: 'gold', box_patron: 'patron' }[boxId];
+  if (tier && !got.some(([id]) => isGear(id) && ITEMS[id].rarity === tier)) {
+    const gear = table.filter(([id]) => isGear(id) && ITEMS[id].rarity === tier);
+    if (gear.length) got[0] = [R.pick(gear)[0], 1];
+  }
   const [a, b] = BOX_TOKENS[boxId];
   return { items: got, tokens: R.int(a, b) };
 }
@@ -130,10 +135,12 @@ function addHype(n) {
     G.hype -= 5;
     G.odds *= 0.97;
     bookie(R.pick(BOOKIE.hype));
-    addItem('box_patron');
+    addItem(hypeGiftBox());
   }
   updateHud();
 }
+// Crowd gifts grow with you, so the best gear still feels special later on.
+function hypeGiftBox() { return G.lvl >= 8 ? 'box_patron' : G.lvl >= 5 ? 'box_gold' : G.lvl >= 3 ? 'box_silver' : 'box_rusty'; }
 function oddsText() { return Math.max(1, Math.round(G.odds)) + ' to 1'; }
 
 function achieve(id) {
@@ -404,11 +411,9 @@ function renderCreate() {
   } else if (cr.step === 'intro') {
     showOverlay(`
       <h2>THE END OF THE WORLD</h2>
+      <div class="job-card"><span class="nm">THE GOAL</span><span class="ds">Beat the 2 bosses on each floor, take the stairs down, and reach the bottom to win.</span></div>
       <div class="story">
-        <p>The Unraveling started on a Tuesday. By Friday the sky had holes in it.</p>
-        <p>The richest people on Earth left on sealed sky arks. From up there, they started a TV show.</p>
-        <p>The rest of us got an offer: crawl down the Spire Below on live TV. Reach the bottom and win a seat on an ark.</p>
-        <p>You said yes. Everyone says yes.</p>
+        <p>The world is ending. The ultra rich escaped to sky arks and now bet on regular people crawling a dungeon on live TV. Make it to the bottom and you get a seat on an ark.</p>
       </div>
       <div class="bookie"><img src="${sprite('bookie').toDataURL()}" alt=""><p><b style="color:var(--pink)">BOOKIE:</b> Welcome to LONG ODDS, ${esc(cr.name.trim())}! Step through the door and become something more... marketable.</p></div>
       <button class="btn red" data-act="next">STEP THROUGH THE DOOR</button>`);
@@ -2388,7 +2393,7 @@ function victory() {
     if (e.drops.length) drops.push(R.pick(e.drops));
     if (R.chance(0.4 + scav)) { const bonus = rollLoot(G.lvl >= 5 ? 'box_silver' : 'box_rusty').items[0]; if (bonus) for (let n = 0; n < bonus[1]; n++) drops.push(bonus[0]); }
     if (R.chance(0.3 + scav)) drops.push(G.lvl >= 6 && R.chance(0.3) ? 'box_silver' : 'box_rusty');
-    if (e.elite) { drops.push('box_silver', rollLoot('box_gold').items[0][0]); achieve('elite'); tag('brave'); }
+    if (e.elite) { drops.push(G.lvl >= 5 ? 'box_gold' : 'box_silver', rollLoot(G.lvl >= 5 ? 'box_gold' : 'box_silver').items[0][0]); achieve('elite'); tag('brave'); }
   }
   const boss = B.enemies.find((e) => e.boss);
   say('<span class="good">Victory!</span>');
