@@ -471,7 +471,7 @@ function adviceLines() {
   if (ups) tips.push(`You have better gear sitting in your bag. Tap Gear, then Equip best.`);
   const craftable = RECIPES.filter(canCraft).length;
   if (craftable) tips.push(`The bench here can make ${craftable} thing${craftable > 1 ? 's' : ''} from your materials right now.`);
-  const junk = junkList().reduce((a, id) => a + count(id) * sellPrice(id), 0);
+  const junk = junkList().reduce((a, id) => a + junkCount(id) * sellPrice(id), 0);
   if (junk >= 10) tips.push(`You have gear that is worse than what you wear. Penny will pay ${junk} tokens for it.`);
   if (!FL.tutorial) {
     const left = FL.bosses.filter((b) => !G.bossesDead.includes(b.id)).length;
@@ -839,8 +839,12 @@ const RECIPE_INPUTS = new Set(RECIPES.flatMap((r) => Object.keys(r.need)));
 function knownScroll(id) { return ITEMS[id].type === 'scroll' && G.moves.includes(ITEMS[id].teaches); }
 function isJunk(id) {
   if (knownScroll(id)) return true;
-  return isGear(id) && !isEquipped(id) && !RECIPE_INPUTS.has(id) && gearScore(id) < gearScore(G.equip[compareSlot(id)]);
+  if (!isGear(id) || spareCopies(id) <= 0) return false;
+  // Weaker than what you wear in that slot, or a spare copy of something you already wear (rings allow two).
+  if (gearScore(id) < gearScore(G.equip[compareSlot(id)])) return true;
+  return isEquipped(id) && (ITEMS[id].type !== 'ring' || equippedCount(id) >= 2);
 }
+function junkCount(id) { return isGear(id) ? spareCopies(id) : count(id); }
 function junkList() { return G.order.filter((id) => count(id) > 0 && isJunk(id)); }
 // Would buying this make you stronger? Better than any gear you own for that slot, or a move you lack.
 function worthBuying(id) {
@@ -941,9 +945,9 @@ function renderShop(extra = '') {
   } else {
     const ids = G.order.filter((id) => spareCopies(id) > 0).sort((a, b) => isJunk(b) - isJunk(a));
     const junk = junkList();
-    const jv = junk.reduce((a, id) => a + count(id) * sellPrice(id), 0);
-    body = `${junk.length ? `<button class="btn gold" data-act="selljunk">SELL ALL JUNK: ${junk.reduce((a, id) => a + count(id), 0)} ITEMS FOR ${jv} TOKENS</button>` : ''}
-      <p class="muted" style="font-size:14px">Junk is gear worse than what you wear that no recipe uses, plus scrolls for moves you already know. Crafting materials are never sold as junk.</p>
+    const jv = junk.reduce((a, id) => a + junkCount(id) * sellPrice(id), 0);
+    body = `${junk.length ? `<button class="btn gold" data-act="selljunk">SELL ALL JUNK: ${junk.reduce((a, id) => a + junkCount(id), 0)} ITEMS FOR ${jv} TOKENS</button>` : ''}
+      <p class="muted" style="font-size:14px">Junk is any gear weaker than what you wear in that slot, spare copies of gear you already wear, and scrolls for moves you know. Crafting materials are never sold as junk.</p>
       <p class="muted" style="font-size:14px">Gear you are wearing is not listed. Junk is also used for crafting at the bench.</p>
       <div class="items">${ids.map((id) => {
         const it = ITEMS[id];
@@ -984,7 +988,7 @@ Object.assign(overlayHandlers, {
   },
   selljunk: () => {
     let v = 0;
-    for (const id of junkList()) { v += count(id) * sellPrice(id); removeItem(id, count(id)); }
+    for (const id of junkList()) { const n = junkCount(id); v += n * sellPrice(id); removeItem(id, n); }
     G.tokens += v;
     updateHud();
     renderShop(`<p class="note good">Sold all junk for ${v} tokens.</p>`);
