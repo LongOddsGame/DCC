@@ -2,7 +2,7 @@
 import { R, makeRng, newSeed } from './rng.js?v=__BUILD_VERSION__';
 import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, RECIPES } from './data.js?v=__BUILD_VERSION__';
 import { generateFloor, tutorialFloor, roomAt, makeGroup, walkable, tileAt, T, key } from './dungeon.js?v=__BUILD_VERSION__';
-import { sprite, heroSprite, docSprite, boxSprite, mobSprite, itemIcon, slotIcon } from './sprites.js?v=__BUILD_VERSION__';
+import { sprite, heroSprite, flipped, docSprite, boxSprite, mobSprite, itemIcon, slotIcon } from './sprites.js?v=__BUILD_VERSION__';
 import { SLOT_COUNT, readSlot, writeSlot, deleteSlot, listSlots } from './save.js?v=__BUILD_VERSION__';
 import { VERSION, checkForUpdate, installUpdate } from './version.js?v=__BUILD_VERSION__';
 
@@ -30,6 +30,13 @@ let logLines = [];
 let heroDraw = { x: 0, y: 0 };
 let moveHeld = null;
 let lastStep = 0;
+// Grid walking: each step slides at an even speed from one tile to the next, and the
+// next step starts the moment the last one ends, so holding a direction never stutters.
+let walk = null;      // { fx, fy, tx, ty, t0, dur }
+let face = 'down';
+let keysDown = [];    // held arrow keys, newest last
+function stepDur() { return hasPerk('quickfeet') ? 135 : 165; }
+function walking(now = performance.now()) { return walk && now < walk.t0 + walk.dur; }
 let SEEN = null;     // fog of war: 1 = tile discovered
 let objIndex = new Map();
 let FX = { proj: null, pops: [], bursts: [], heroFlash: 0 };
@@ -413,101 +420,6 @@ Object.assign(overlayHandlers, {
   beginskip: () => newGame(cr.slot, cr.name.trim().slice(0, 14), cr.job, cr.race, cr.cls, false, cr.perks),
 });
 
-function talkDoc() {
-  const d = G.doc;
-  if (!d.met) {
-    d.met = true;
-    docSay('Name\'s Marisol Vance. Everyone calls me Doc. I was an ER nurse back when hospitals were a thing.');
-  }
-  if (!d.eventDone) {
-    d.eventDone = true;
-    docSay('Quick, this crawler, Jules, is bleeding out and I\'m out of potions. Can you spare a Health Potion?');
-    const has = count('potion_heal') > 0;
-    return ask(null, [
-      { label: has ? 'Give Jules a Health Potion' : 'Give Jules a Health Potion (you have none)', color: 'green', disabled: !has, fn: () => {
-        removeItem('potion_heal'); tag('generous');
-        docSay('Thank you. Really. Jules owes you one, and so do I.');
-        bookie('Aww. The Patrons hate this. The viewers love it.');
-        addHype(1);
-        save();
-        docMenu();
-      } },
-      { label: 'Keep it for yourself', color: 'red', fn: () => {
-        tag('greedy');
-        docSay('Right. I see what kind of crawler you are.');
-        bookie('Cold! The Patrons approve. Jules does not.');
-        save();
-        docMenu();
-      } },
-    ]);
-  }
-  docMenu();
-}
-
-function docGreeting() {
-  const d = G.doc;
-  const mood = docMood();
-  const last = d.memory[d.memory.length - 1];
-  if (last && !d.heardLast) { d.heardLast = true; docSay(TAG_RUMORS[last]); }
-  if (d.trust >= 20 && !d.gift) {
-    d.gift = true;
-    docSay('Here. I\'ve been saving this for someone who deserves it.');
-    addItem('box_silver');
-  }
-  const lines = {
-    friend: 'There\'s my favorite crawler. Sit down, I\'ll patch you up for free.',
-    warm: 'You\'re doing alright out there. Need patching up?',
-    neutral: 'Another one. Fine. Healing\'s 10 tokens.',
-    scared: 'D-don\'t come any closer. Take what you need and go.',
-    hostile: 'I don\'t help people like you. Buy something or get out.',
-  };
-  docSay(lines[mood]);
-}
-function healPrice() { return { friend: 0, warm: 5, neutral: 10, scared: 0, hostile: null }[docMood()]; }
-function potionPrice() {
-  const m = docMood();
-  const base = { friend: 5, warm: 7, neutral: 8, scared: 8, hostile: 16 }[m];
-  return G.cls === 'talker' ? Math.max(3, base - 2) : base;
-}
-
-function docMenu(greet = true) {
-  if (greet) docGreeting();
-  const hp = healPrice();
-  const pp = potionPrice();
-  const s = stats();
-  ask(null, [
-    { label: hp === null ? 'Ask for healing (she refuses)' : hp === 0 ? 'Heal me (free)' : `Heal me (${hp} tokens)`, color: 'green', disabled: hp === null || (hp > 0 && G.tokens < hp) || (G.hp >= s.maxHp && G.mp >= s.maxMp), fn: () => {
-      G.tokens -= hp; G.hp = s.maxHp; G.mp = s.maxMp;
-      docSay(docMood() === 'scared' ? 'There. Done. Please leave.' : 'Good as new. Try not to undo my work.');
-      updateHud(); docMenuAgain();
-    } },
-    { label: `Buy a Health Potion (${pp} tokens)`, disabled: G.tokens < pp, fn: () => { G.tokens -= pp; addItem('potion_heal'); updateHud(); docMenuAgain(); } },
-    { label: 'What should I do next?', color: 'purple', fn: () => {
-      const tips = adviceLines();
-      docSay(tips.length ? tips[0] : 'Honestly? You\'re in decent shape. Go find those bosses.');
-      for (const t of tips.slice(1, 3)) docSay(t);
-      docMenuAgain();
-    } },
-    ...(G.doc.taught ? [] : [{ label: G.doc.trust >= 5 ? 'Can you teach me anything?' : 'Can you teach me anything? (she needs to trust you)', disabled: G.doc.trust < 5, fn: () => {
-      G.doc.taught = true;
-      docSay('Fine. Here\'s how I keep people alive down here. Read it somewhere safe.');
-      addItem('scroll_mend');
-      docMenuAgain();
-    } }]),
-    { label: 'Where are the bosses?', fn: () => { docSay('I hear things. Let me mark it for you.'); pointToBoss((t) => docSay(t)); docMenuAgain(); } },
-    { label: 'Ask about the show', fn: () => {
-      docSay(R.pick([
-        'The Patrons bet on everything. How long you last, who you kill, who you save. Don\'t give them a good show for free.',
-        'BOOKIE runs the cameras and the odds. Lately it\'s been... editorializing. I don\'t think it\'s supposed to do that.',
-        'Nobody has ever come back up to tell us if the ark seats are real.',
-      ]));
-      docMenuAgain();
-    } },
-    { label: 'Leave', color: 'grey', fn: () => save() },
-  ]);
-}
-function docMenuAgain() { G.doc.heardLast = true; docMenu(false); }
-
 // ---------- Hints and BOOKIE's camera booths ----------
 function compass(dx, dy) {
   const ns = dy < -Math.abs(dx) / 2 ? 'north' : dy > Math.abs(dx) / 2 ? 'south' : '';
@@ -549,57 +461,231 @@ function adviceLines() {
   const ups = upgradeCount();
   if (ups) tips.push(`You have better gear sitting in your bag. Tap Gear, then Equip best.`);
   const craftable = RECIPES.filter(canCraft).length;
-  if (craftable) tips.push(`The bench here can make ${craftable} thing${craftable > 1 ? 's' : ''} from your junk right now.`);
-  const junk = G.order.filter((id) => ITEMS[id].type === 'junk').reduce((a, id) => a + count(id) * sellPrice(id), 0);
-  if (junk >= 10) tips.push(`Penny will give you ${junk} tokens for your junk.`);
+  if (craftable) tips.push(`The bench here can make ${craftable} thing${craftable > 1 ? 's' : ''} from your materials right now.`);
+  const junk = junkList().reduce((a, id) => a + count(id) * sellPrice(id), 0);
+  if (junk >= 10) tips.push(`You have gear that is worse than what you wear. Penny will pay ${junk} tokens for it.`);
   if (!FL.tutorial) {
     const left = FL.bosses.filter((b) => !G.bossesDead.includes(b.id)).length;
     tips.push(left ? `${left} boss${left > 1 ? 'es' : ''} still stand between you and the stairs.` : 'Both bosses are down. Find the stairs.');
   }
   return tips;
 }
+// ---------- Talking panels: Doc and BOOKIE booths ----------
+// Both open as a full screen panel: who you are talking to, what they just said,
+// and big option cards that say what each choice does.
+let talk = null; // { kind, at, lines, opts, extra }
+function renderTalk() {
+  const isDoc = talk.kind === 'doc';
+  const portrait = (isDoc ? docSprite() : sprite('bookie')).toDataURL();
+  const sub = isDoc ? docMoodText() : 'Your game was saved here';
+  const lines = talk.lines.slice(-3).map((l) => `<p>${l}</p>`).join('');
+  const opts = talk.opts.map((o, i) => `<button class="talk-opt ${o.color || ''}" data-act="talk" data-i="${i}" ${o.disabled ? 'disabled' : ''}>
+    <span class="nm">${esc(o.label)}</span>${o.sub ? `<span class="ds">${esc(o.sub)}</span>` : ''}</button>`).join('');
+  showOverlay(`
+    <div class="talk-head"><img src="${portrait}" alt=""><div class="who"><h2>${isDoc ? 'DOC VANCE' : 'BOOKIE BOOTH'}</h2><span class="muted">${esc(sub)}</span></div><span class="tok">${G.tokens} tokens</span></div>
+    <div class="speech">${lines}</div>
+    ${talk.extra || ''}
+    <div class="talk-opts">${opts}</div>
+    <button class="btn grey" data-act="talkleave" style="position:sticky; bottom:0">LEAVE</button>`);
+}
+overlayHandlers.talk = (i) => { const o = talk && talk.opts[i]; if (o && !o.disabled) o.fn(); };
+overlayHandlers.talkleave = () => { save(); talk = null; hideOverlay(); renderControls(); };
+
+// ----- Doc -----
+function docLine(t) { talk.lines.push(`<b class="who-doc">Doc:</b> ${esc(t)}`); }
+function docMoodText() {
+  return { friend: 'Trusts you a lot', warm: 'Likes you', neutral: 'Not sure about you yet', scared: 'Scared of you', hostile: 'Does not like you' }[docMood()];
+}
+function talkDoc() {
+  moveHeld = null;
+  talk = { kind: 'doc', lines: [], opts: [] };
+  const d = G.doc;
+  if (!d.met) {
+    d.met = true;
+    docLine('Name\'s Marisol Vance. Everyone calls me Doc. I was an ER nurse back when hospitals were a thing.');
+  }
+  if (!d.eventDone) {
+    docLine('Quick, this crawler, Jules, is bleeding out and I\'m out of potions. Can you spare a Health Potion?');
+    const has = count('potion_heal') > 0;
+    talk.opts = [
+      { label: 'Give Jules a Health Potion', sub: has ? `You have ${count('potion_heal')}. Doc will remember this.` : 'You do not have one.', color: 'green', disabled: !has, fn: () => {
+        d.eventDone = true;
+        removeItem('potion_heal'); tag('generous');
+        docLine('Thank you. Really. Jules owes you one, and so do I.');
+        bookie('Aww. The Patrons hate this. The viewers love it.');
+        addHype(1);
+        save();
+        docPanel();
+      } },
+      { label: 'Keep it for yourself', sub: 'Doc will remember this too.', color: 'red', fn: () => {
+        d.eventDone = true;
+        tag('greedy');
+        docLine('Right. I see what kind of crawler you are.');
+        bookie('Cold! The Patrons approve. Jules does not.');
+        save();
+        docPanel();
+      } },
+    ];
+    return renderTalk();
+  }
+  docGreeting();
+  docPanel();
+}
+function docGreeting() {
+  const d = G.doc;
+  const last = d.memory[d.memory.length - 1];
+  if (last && !d.heardLast) { d.heardLast = true; docLine(TAG_RUMORS[last]); }
+  if (d.trust >= 20 && !d.gift) {
+    d.gift = true;
+    docLine('Here. I\'ve been saving this for someone who deserves it.');
+    addItem('box_silver');
+  }
+  docLine({
+    friend: 'There\'s my favorite crawler. Sit down, I\'ll patch you up for free.',
+    warm: 'You\'re doing alright out there. Need patching up?',
+    neutral: 'Another one. Fine. Healing\'s 10 tokens.',
+    scared: 'D-don\'t come any closer. Take what you need and go.',
+    hostile: 'I don\'t help people like you. Buy something or get out.',
+  }[docMood()]);
+}
+function healPrice() { return { friend: 0, warm: 5, neutral: 10, scared: 0, hostile: null }[docMood()]; }
+function potionPrice() {
+  const base = { friend: 5, warm: 7, neutral: 8, scared: 8, hostile: 16 }[docMood()];
+  return G.cls === 'talker' ? Math.max(3, base - 2) : base;
+}
+function docPanel() {
+  const d = G.doc;
+  const hp = healPrice(), pp = potionPrice(), s = stats();
+  const full = G.hp >= s.maxHp && G.mp >= s.maxMp;
+  talk.opts = [
+    { label: hp === null ? 'Heal me' : hp === 0 ? 'Heal me (free)' : `Heal me (${hp} tokens)`, color: 'green',
+      sub: hp === null ? 'She refuses to treat you.' : full ? 'You are already at full HP and MP.' : `Refills HP and MP. You are at ${Math.round(G.hp)} of ${s.maxHp} HP.`,
+      disabled: hp === null || full || G.tokens < (hp || 0), fn: () => {
+        G.tokens -= hp; G.hp = s.maxHp; G.mp = s.maxMp;
+        docLine(docMood() === 'scared' ? 'There. Done. Please leave.' : 'Good as new. Try not to undo my work.');
+        updateHud(); docPanel();
+      } },
+    { label: `Buy a Health Potion (${pp} tokens)`, sub: `Heals 25. You have ${count('potion_heal')}.`, disabled: G.tokens < pp, fn: () => {
+      G.tokens -= pp; addItem('potion_heal', 1, true); docLine('Here. Don\'t drink it all at once.'); updateHud(); docPanel();
+    } },
+    { label: 'What should I do next?', sub: 'She looks over your bag and gear.', color: 'purple', fn: () => {
+      const tips = adviceLines();
+      if (!tips.length) docLine('Honestly? You\'re in decent shape. Go find those bosses.');
+      for (const t of tips.slice(0, 3)) docLine(t);
+      docPanel();
+    } },
+    { label: 'Where are the bosses?', sub: 'Marks the nearest boss on your map.', color: 'red', fn: () => { pointToBoss(docLine); docPanel(); } },
+    ...(d.taught ? [] : [{ label: 'Teach me something', sub: d.trust >= 5 ? 'She has a healing spell to share.' : 'She needs to trust you more first. Kindness helps.', disabled: d.trust < 5, fn: () => {
+      d.taught = true;
+      docLine('Fine. Here\'s how I keep people alive down here. Learn it in a safe room, like this one.');
+      addItem('scroll_mend', 1, true);
+      docPanel();
+    } }]),
+    { label: 'Ask about the show', sub: 'Gossip about the Patrons and BOOKIE.', fn: () => {
+      docLine(R.pick([
+        'The Patrons bet on everything. How long you last, who you kill, who you save. Don\'t give them a good show for free.',
+        'BOOKIE runs the cameras and the odds. Lately it\'s been... editorializing. I don\'t think it\'s supposed to do that.',
+        'Nobody has ever come back up to tell us if the ark seats are real.',
+        'The sponsor booths? Rich people pay to put their names on them. The gifts are real, though. Take them.',
+      ]));
+      docPanel();
+    } },
+  ];
+  renderTalk();
+}
+
+// ----- BOOKIE camera booths -----
+// Fictional billionaire Patrons who pay to put their name on a booth.
+const SPONSORS = ['Chester Vandermoolah', 'Bitsy Goldwater-Prym', 'Lord Reginald Upsworth', 'Tamsin Yachtley', 'Duncan Moneybags III', 'Ophelia Trustfund', 'Baron Lars Offshore', 'Mimi Hedgefund'];
+function boothSponsor(at) { let h = 0; for (const ch of G.seed + at) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return SPONSORS[h % SPONSORS.length]; }
+function sponsorPool() {
+  if (G.lvl >= 6) return 'a Gold Box (sometimes), a Silver Box, or supplies';
+  if (G.lvl >= 3) return 'a Silver Box (sometimes), a Rusty Box, or supplies';
+  return 'a Rusty Box, potions or a bomb. Better gifts start at level 3';
+}
+function rollSponsorGift() {
+  if (G.lvl >= 6 && R.chance(0.25)) return 'box_gold';
+  if (G.lvl >= 3 && R.chance(0.35)) return 'box_silver';
+  return R.pick(['box_rusty', 'box_rusty', 'potion_heal', 'potion_radar', 'potion_mana', 'bomb']);
+}
+function boothLine(t) { talk.lines.push(`<b class="who-bk">BOOKIE:</b> ${esc(t)}`); }
 function boothMenu(at, fresh) {
-  if (fresh) {
+  moveHeld = null;
+  if (fresh || !talk) {
     save();
-    bookie(R.pick(['You found a camera booth! Game saved. Now, what can BOOKIE do for its favorite asset?', 'Booth time! Saved your progress. Ask me anything. Some answers are even true.', 'Saved! Lean in close, the Patrons like a confessional.']));
+    talk = { kind: 'booth', at, lines: [], opts: [] };
+    boothLine(R.pick(['You found a camera booth! Game saved. Now, what can BOOKIE do for its favorite asset?', 'Booth time! Saved your progress. Ask me anything. Some answers are even true.', 'Saved! Lean in close, the Patrons like a confessional.']));
   }
   G.boothGifts = G.boothGifts || [];
   const giftKey = G.floor + ':' + at;
   const gifted = G.boothGifts.includes(giftKey);
-  ask(null, [
-    { label: 'Where is the nearest boss?', color: 'red', fn: () => { pointToBoss(bookie); boothMenu(at); } },
-    { label: 'Point me to loot', color: 'gold', fn: () => { pointToLoot(bookie); boothMenu(at); } },
-    { label: 'What should I do next?', color: 'purple', fn: () => {
+  const sponsor = boothSponsor(at);
+  talk.extra = `<div class="sponsor">
+    <div class="row-between"><b>SPONSOR GIFT</b><span class="${gifted ? 'muted' : 'ready'}">${gifted ? 'Claimed' : '1 gift ready'}</span></div>
+    <p>This booth is sponsored by <b>${esc(sponsor)}</b>, one of the Patrons: the ultra rich who watch the show and bet on crawlers. Sponsors pay to put their name on booths, and each booth gives every crawler one free gift.</p>
+    <p class="muted">At level ${G.lvl} you can get ${esc(sponsorPool())}.</p>
+    ${gifted ? '' : '<button class="btn green" data-act="sponsor">CLAIM YOUR GIFT</button>'}
+  </div>`;
+  talk.opts = [
+    { label: 'Find a boss', sub: 'Marks the nearest boss on your map.', color: 'red', fn: () => { pointToBoss(boothLine); boothMenu(at); } },
+    { label: 'Find loot', sub: 'Marks the 3 closest chests.', color: 'gold', fn: () => { pointToLoot(boothLine); boothMenu(at); } },
+    { label: 'What should I do next?', sub: 'Tips based on your bag and gear.', color: 'purple', fn: () => {
       const tips = adviceLines();
-      bookie(tips[0] || 'Go punch something on camera. That is always the answer.');
-      for (const t of tips.slice(1, 3)) say('• ' + esc(t));
+      if (!tips.length) boothLine('Go punch something on camera. That is always the answer.');
+      for (const t of tips.slice(0, 3)) boothLine(t);
       boothMenu(at);
     } },
-    { label: gifted ? 'Sponsor gift (already claimed here)' : 'Claim a sponsor gift', color: 'green', disabled: gifted, fn: () => {
-      G.boothGifts.push(giftKey);
-      const roll = R.next() + G.lvl * 0.03;
-      const gift = roll > 0.95 ? 'box_gold' : roll > 0.7 ? 'box_silver' : R.pick(['box_rusty', 'potion_heal', 'potion_radar', 'potion_mana', 'bomb']);
-      bookie(R.pick(['A Patron sponsored this booth! Smile for the logo.', 'This gift brought to you by a billionaire who wants you to suffer slightly less.', 'Sponsor gift! Say thank you to the nice rich person.']));
-      addItem(gift);
-      save();
+    { label: 'How are my odds?', sub: `Now ${oddsText()}. Learn what moves them.`, fn: () => {
+      boothLine(`You are at ${oddsText()}. ${G.odds > 15 ? 'Long shot. Win flashy fights to bring that down.' : G.odds > 6 ? 'Respectable. The Patrons are paying attention.' : 'A favorite! Do not let it go to your head.'}`);
+      boothLine('Hype fills when you win big, win fast or nearly die. Fill the hype bar and a Patron sends you a Patron\'s Pick box.');
       boothMenu(at);
     } },
-    { label: 'How are my odds?', fn: () => {
-      bookie(`You are at ${oddsText()}. ${G.odds > 15 ? 'Long shot. Win flashy fights to bring that down.' : G.odds > 6 ? 'Respectable. The Patrons are paying attention.' : 'A favorite! Do not let it go to your head.'} Hype fills when you win big, win fast, or nearly die. Full hype means a Patron gift.`);
-      boothMenu(at);
-    } },
-    { label: 'Leave', color: 'grey' },
-  ]);
+  ];
+  renderTalk();
 }
+overlayHandlers.sponsor = () => {
+  if (!talk || talk.kind !== 'booth') return;
+  const key2 = G.floor + ':' + talk.at;
+  G.boothGifts = G.boothGifts || [];
+  if (G.boothGifts.includes(key2)) return;
+  G.boothGifts.push(key2);
+  const gift = rollSponsorGift();
+  addItem(gift, 1, true);
+  boothLine(`${boothSponsor(talk.at)} sends you a ${ITEMS[gift].name}! ${R.pick(['Smile for the logo.', 'Say thank you to the nice rich person.', 'They expect a good show in return.'])}`);
+  save();
+  boothMenu(talk.at);
+};
 
 // ---------- Gear: six slots, stat compare, equip best ----------
 function isEquipped(id) { return GEAR_SLOTS.some((sl) => G.equip[sl] === id); }
 function gearStats(id) {
   const it = id && ITEMS[id];
   const o = {};
-  if (it) for (const k in STAT_NAMES) if (it[k]) o[k] = it[k];
+  if (it) for (const k in STAT_NAMES) if (it[k]) o[k] = it[k] + upgBonus(id, k, upgLevel(id));
   return o;
 }
+// ----- Upgrade table: raise a piece of gear up to +5 -----
+const UPG_MAX = 5;
+const UPG_MAT = { weapon: 'j_wire', wrist: 'j_wire', head: 'j_token', armor: 'j_token', shirt: 'j_feather', shoes: 'j_feather' };
+function upgLevel(id) { return (G && G.upg && G.upg[id]) || 0; }
+function upgBonus(id, k, lvl) {
+  const base = ITEMS[id][k] || 0;
+  if (base <= 0 || !lvl) return 0;
+  const step = k === 'maxHp' || k === 'maxMp' ? Math.max(2, Math.round(base * 0.25)) : Math.max(1, Math.round(base * 0.25));
+  return step * lvl;
+}
+function upgCost(id) {
+  const n = upgLevel(id) + 1;
+  const need = { [UPG_MAT[ITEMS[id].type]]: n };
+  if (n >= 3) need.j_jelly = n - 2;
+  return { need, tokens: Math.round(((RARITY_PRICE[ITEMS[id].rarity] || 6) / 3) * n) };
+}
+function canUpgrade(id) {
+  if (upgLevel(id) >= UPG_MAX) return false;
+  const c = upgCost(id);
+  return G.tokens >= c.tokens && Object.entries(c.need).every(([m, n]) => count(m) >= n);
+}
+function itemName(id) { const l = isGear(id) ? upgLevel(id) : 0; return ITEMS[id].name + (l ? ' +' + l : ''); }
 function statText(id) {
   const parts = Object.entries(gearStats(id)).map(([k, v]) => (v > 0 ? '+' : '') + v + ' ' + STAT_NAMES[k]);
   if (ITEMS[id].hype) parts.push('earns hype');
@@ -667,7 +753,7 @@ function renderGear(extra = '') {
     return `<button class="gear-slot" data-act="gslot" data-id="${sl}">
       <img src="${id ? icon(id) : slotIcon(sl)}" alt="">
       <span class="txt"><span class="sl">${SLOT_NAMES[sl].toUpperCase()}${up ? ' <span class="delta up">▲ UPGRADE</span>' : ''}</span>
-      <span class="nm" style="color:${id ? RARITY[ITEMS[id].rarity].color : 'var(--muted)'}">${id ? esc(ITEMS[id].name) : 'Empty'}</span>
+      <span class="nm" style="color:${id ? RARITY[ITEMS[id].rarity].color : 'var(--muted)'}">${id ? esc(itemName(id)) : 'Empty'}</span>
       <span class="ds">${id ? esc(statText(id)) : owned ? owned + ' to choose from' : 'Find gear in loot boxes, the shop or the bench'}</span></span>
       <span class="chev">▶</span></button>`;
   }).join('');
@@ -689,7 +775,7 @@ function renderGearPicker(extra = '') {
     const it = ITEMS[id];
     const eq = cur === id;
     return `<div class="item ${eq ? 'on' : ''}"><img src="${icon(id)}" alt="">
-      <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(it.name)}${count(id) > 1 ? ' x' + count(id) : ''}</span>
+      <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))}${count(id) > 1 ? ' x' + count(id) : ''}</span>
       <span class="ds">${esc(statText(id))}. ${esc(it.desc)}<br>${deltaHtml(id)}</span></div>
       <button class="act ${eq ? 'grey' : 'green'}" data-act="${eq ? 'gunequip' : 'gequip'}" data-id="${id}">${eq ? 'Take off' : 'Equip'}</button></div>`;
   }).join('') || `<p class="muted">You have no ${SLOT_NAMES[sl].toLowerCase()} gear yet. Loot boxes, Penny's shop and the crafting bench all have some.</p>`;
@@ -718,6 +804,11 @@ function equipNowHtml(id, back) {
 }
 
 // ---------- Penny's shop: stock gets better as you level up ----------
+// Junk: gear worse than what you wear in that slot that no recipe needs. Never materials.
+const RECIPE_INPUTS = new Set(RECIPES.flatMap((r) => Object.keys(r.need)));
+function junkList() {
+  return G.order.filter((id) => count(id) > 0 && isGear(id) && !isEquipped(id) && !RECIPE_INPUTS.has(id) && gearScore(id) < gearScore(G.equip[ITEMS[id].type]));
+}
 function shopTier() { let t = 0; SHOP_TIERS.forEach((x, i) => { if (G.lvl >= x.lvl) t = i; }); return t; }
 function priceOf(id) {
   const it = ITEMS[id];
@@ -779,14 +870,15 @@ function renderShop(extra = '') {
       <h3 class="sub">SPECIALS: ONE OF EACH</h3><div class="items">${st.specials.map((id) => shopRow(id, true, bought)).join('')}</div>`;
   } else {
     const ids = G.order.filter((id) => count(id) > 0 && !(isEquipped(id) && count(id) === 1));
-    const junk = ids.filter((id) => ITEMS[id].type === 'junk');
+    const junk = junkList();
     const jv = junk.reduce((a, id) => a + count(id) * sellPrice(id), 0);
-    body = `${junk.length ? `<button class="btn gold" data-act="selljunk">SELL ALL JUNK (${jv} TOKENS)</button>` : ''}
+    body = `${junk.length ? `<button class="btn gold" data-act="selljunk">SELL ALL JUNK: ${junk.reduce((a, id) => a + count(id), 0)} ITEMS FOR ${jv} TOKENS</button>` : ''}
+      <p class="muted" style="font-size:14px">Junk is gear that is worse than what you are wearing and is not used in any crafting recipe. Crafting materials are never sold as junk.</p>
       <p class="muted" style="font-size:14px">Gear you are wearing is not listed. Junk is also used for crafting at the bench.</p>
       <div class="items">${ids.map((id) => {
         const it = ITEMS[id];
         return `<div class="item"><img src="${icon(id)}" alt="">
-          <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(it.name)} x${count(id)}</span><span class="ds">${isGear(id) ? esc(SLOT_NAMES[it.type] + ': ' + statText(id)) : esc(it.desc)}</span></div>
+          <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(it.name)} x${count(id)}${junk.includes(id) ? ' <span class="junk-tag">JUNK</span>' : ''}</span><span class="ds">${isGear(id) ? esc(SLOT_NAMES[it.type] + ': ' + statText(id)) : esc(it.desc)}</span></div>
           <button class="act" data-act="sell" data-id="${id}">Sell ${sellPrice(id)}</button></div>`;
       }).join('') || '<p class="muted">Nothing to sell.</p>'}</div>`;
   }
@@ -822,7 +914,7 @@ Object.assign(overlayHandlers, {
   },
   selljunk: () => {
     let v = 0;
-    for (const id of G.order.filter((x) => ITEMS[x].type === 'junk')) { v += count(id) * sellPrice(id); removeItem(id, count(id)); }
+    for (const id of junkList()) { v += count(id) * sellPrice(id); removeItem(id, count(id)); }
     G.tokens += v;
     updateHud();
     renderShop(`<p class="note good">Sold all junk for ${v} tokens.</p>`);
@@ -844,8 +936,57 @@ function canCraft(r) {
   if (G.lvl < r.lvl || G.tokens < (r.tokens || 0)) return false;
   return Object.entries(recipeNeed(r)).every(([id, n]) => count(id) >= n);
 }
+// How many times you can make this recipe with what you have right now.
+function maxCraft(r) {
+  if (G.lvl < r.lvl) return 0;
+  let n = r.tokens ? Math.floor(G.tokens / r.tokens) : Infinity;
+  for (const [id, k] of Object.entries(recipeNeed(r))) n = Math.min(n, Math.floor(count(id) / k));
+  return n === Infinity ? 0 : n;
+}
+function craftTimes(r, times) {
+  for (let i = 0; i < times && canCraft(r); i++) {
+    for (const [id, n] of Object.entries(recipeNeed(r))) removeItem(id, n);
+    G.tokens -= r.tokens || 0;
+    addItem(r.out, 1, true);
+    if (!G.crafted) { G.crafted = 0; bookie('Arts and crafts on a death show. The Patrons find it adorable.'); }
+    G.crafted++;
+  }
+}
+let benchTab = 'craft';
 function openBench() { moveHeld = null; renderBench(); }
+function benchTabs() {
+  return `<div class="tabs"><button class="tab ${benchTab === 'craft' ? 'on' : ''}" data-act="benchtab" data-id="craft">Crafting</button><button class="tab ${benchTab === 'upgrade' ? 'on' : ''}" data-act="benchtab" data-id="upgrade">Upgrade table</button></div>`;
+}
+function renderUpgrade(extra = '') {
+  const ids = G.order.filter((id) => isGear(id) && count(id) > 0).sort((a, b) => (isEquipped(b) - isEquipped(a)) || gearScore(b) - gearScore(a));
+  const rows = ids.map((id) => {
+    const it = ITEMS[id];
+    const lvl = upgLevel(id);
+    const maxed = lvl >= UPG_MAX;
+    let body;
+    if (maxed) body = '<span class="need"><span class="ok">Fully upgraded</span></span>';
+    else {
+      const c = upgCost(id);
+      const gains = Object.keys(STAT_NAMES).filter((k) => (it[k] || 0) > 0).map((k) => `<span class="delta up">▲+${upgBonus(id, k, lvl + 1) - upgBonus(id, k, lvl)} ${STAT_NAMES[k]}</span>`).join(' ');
+      const need = Object.entries(c.need).map(([m, n]) => `<span class="${count(m) >= n ? 'ok' : 'no'}">${esc(ITEMS[m].name)} ${Math.min(count(m), n)}/${n}</span>`);
+      need.push(`<span class="${G.tokens >= c.tokens ? 'ok' : 'no'}">${c.tokens} tokens</span>`);
+      body = `<span class="ds">Next: ${gains}</span><span class="need">Needs: ${need.join(', ')}</span>`;
+    }
+    return `<div class="item ${isEquipped(id) ? 'on' : ''}"><img src="${icon(id)}" alt="">
+      <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))}${isEquipped(id) ? ' <span class="equipped">EQUIPPED</span>' : ''}</span>
+      <span class="ds">${esc(SLOT_NAMES[it.type])}: ${esc(statText(id))} · <span class="pips">${'■'.repeat(lvl)}${'□'.repeat(UPG_MAX - lvl)}</span></span>${body}</div>
+      <button class="act gold" data-act="upgrade" data-id="${id}" ${canUpgrade(id) ? '' : 'disabled'}>${maxed ? 'MAX' : '+' + (lvl + 1)}</button></div>`;
+  }).join('') || '<p class="muted">You have no gear to upgrade yet.</p>';
+  showOverlay(`
+    <div class="row-between"><h2>WORKBENCH</h2><span class="tok">${G.tokens} tokens</span></div>
+    ${benchTabs()}
+    ${extra}
+    <p class="muted" style="font-size:15px">Make your gear stronger, up to +${UPG_MAX}. Each upgrade raises every stat on the item. Upgrades use crafting materials and tokens, and apply to every copy of that item you own.</p>
+    <div class="items">${rows}</div>
+    <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
+}
 function renderBench(extra = '') {
+  if (benchTab === 'upgrade') return renderUpgrade(extra);
   const order = RECIPES.slice().sort((a, b) => (canCraft(b) - canCraft(a)) || ((G.lvl >= b.lvl) - (G.lvl >= a.lvl)) || a.lvl - b.lvl);
   const rows = order.map((r) => {
     const it = ITEMS[r.out];
@@ -856,13 +997,15 @@ function renderBench(extra = '') {
       <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(it.name)}</span>
       <span class="ds">${isGear(r.out) ? gearDescHtml(r.out) : esc(it.desc)}</span>
       <span class="need">${locked ? `Unlocks at level ${r.lvl}` : 'Needs: ' + need.join(', ')}</span></div>
-      <button class="act purple" data-act="craft" data-id="${RECIPES.indexOf(r)}" ${canCraft(r) ? '' : 'disabled'}>${locked ? 'Lv ' + r.lvl : 'Craft'}</button></div>`;
+      <div class="craft-btns"><button class="act purple" data-act="craft" data-id="${RECIPES.indexOf(r)}" ${canCraft(r) ? '' : 'disabled'}>${locked ? 'Lv ' + r.lvl : 'Craft'}</button>
+      ${maxCraft(r) > 1 ? `<button class="act gold" data-act="craftmax" data-id="${RECIPES.indexOf(r)}">Max x${maxCraft(r)}</button>` : ''}</div></div>`;
   }).join('');
   const ready = RECIPES.filter(canCraft).length;
   showOverlay(`
-    <div class="row-between"><h2>CRAFTING BENCH</h2><span class="muted" style="font-size:14px">${ready} ready to make</span></div>
+    <div class="row-between"><h2>WORKBENCH</h2><span class="muted" style="font-size:14px">${ready} ready to make</span></div>
+    ${benchTabs()}
     ${extra}
-    <p class="muted" style="font-size:15px">Mobs drop junk. Bash it together into gear, potions and bombs. New recipes unlock as you level up.${hasPerk('tinkerer') ? ' Tinkerer: every recipe needs one less junk.' : ''}</p>
+    <p class="muted" style="font-size:15px">Mobs drop crafting materials. Bash them together into gear, potions and bombs. New recipes unlock as you level up.${hasPerk('tinkerer') ? ' Tinkerer: every recipe needs one less material.' : ''}</p>
     <div class="items">${rows}</div>
     <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
 }
@@ -870,13 +1013,37 @@ Object.assign(overlayHandlers, {
   craft: (_, b) => {
     const r = RECIPES[Number(b.dataset.id)];
     if (!r || !canCraft(r)) return;
-    for (const [id, n] of Object.entries(recipeNeed(r))) removeItem(id, n);
-    G.tokens -= r.tokens || 0;
-    addItem(r.out);
-    if (!G.crafted) { G.crafted = 0; bookie('Arts and crafts on a death show. The Patrons find it adorable.'); }
-    G.crafted++;
+    craftTimes(r, 1);
+    say(`Made <span class="loot">${esc(ITEMS[r.out].name)}</span>`);
     updateHud();
     renderBench(`<div class="reveal">${equipNowHtml(r.out, 'bench') || `<p class="note good">You made ${esc(ITEMS[r.out].name)}!</p>`}</div>`);
+  },
+  benchtab: (_, b) => { benchTab = b.dataset.id; renderBench(); },
+  upgrade: (_, b) => {
+    const id = b.dataset.id;
+    if (!canUpgrade(id)) return;
+    const c = upgCost(id);
+    for (const [m, n] of Object.entries(c.need)) removeItem(m, n);
+    G.tokens -= c.tokens;
+    const before = stats();
+    G.upg = G.upg || {};
+    G.upg[id] = upgLevel(id) + 1;
+    const s2 = stats();
+    G.hp = Math.min(s2.maxHp, G.hp + Math.max(0, s2.maxHp - before.maxHp));
+    G.mp = Math.min(s2.maxMp, G.mp + Math.max(0, s2.maxMp - before.maxMp));
+    say(`Upgraded <span class="loot">${esc(itemName(id))}</span>!`);
+    if (G.upg[id] === UPG_MAX) bookie('Maxed out! The Patrons respect a crawler who does their homework.');
+    updateHud();
+    renderBench(`<div class="reveal"><p class="note good">${esc(itemName(id))}: ${esc(statText(id))}</p></div>`);
+  },
+  craftmax: (_, b) => {
+    const r = RECIPES[Number(b.dataset.id)];
+    const n = r ? maxCraft(r) : 0;
+    if (!n) return;
+    craftTimes(r, n);
+    say(`Made <span class="loot">${esc(ITEMS[r.out].name)} x${n}</span>`);
+    updateHud();
+    renderBench(`<div class="reveal">${equipNowHtml(r.out, 'bench') || `<p class="note good">You made ${n} ${esc(ITEMS[r.out].name)}!</p>`}</div>`);
   },
   benchclose: () => { save(); hideOverlay(); renderControls(); },
 });
@@ -903,6 +1070,7 @@ function enterMap(fresh) {
   hideOverlay();
   $('hud').hidden = false;
   heroDraw = { x: G.pos.x * 16, y: G.pos.y * 16 };
+  walk = null; keysDown = []; moveHeld = null;
   clearLog();
   reveal();
   if (FL.tutorial) {
@@ -971,9 +1139,19 @@ controls.addEventListener('pointerdown', (e) => {
   const d = e.target.closest('[data-dir]');
   if (!d) return;
   e.preventDefault();
+  controls.querySelectorAll('.held').forEach((x) => x.classList.remove('held'));
   d.classList.add('held');
   moveHeld = d.dataset.dir;
-  lastStep = 0;
+  try { d.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
+});
+// Sliding your thumb onto another arrow changes direction without lifting it.
+controls.addEventListener('pointerover', (e) => {
+  if (!moveHeld || !(e.buttons & 1) && e.pointerType === 'mouse') return;
+  const d = e.target.closest('[data-dir]');
+  if (!d || d.dataset.dir === moveHeld) return;
+  controls.querySelectorAll('.held').forEach((x) => x.classList.remove('held'));
+  d.classList.add('held');
+  moveHeld = d.dataset.dir;
 });
 const release = () => { moveHeld = null; controls.querySelectorAll('.held').forEach((x) => x.classList.remove('held')); };
 window.addEventListener('pointerup', release);
@@ -982,13 +1160,23 @@ window.addEventListener('pointercancel', release);
 const KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right' };
 window.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT') return;
-  if (KEYS[e.key] && mode === 'map') { moveHeld = KEYS[e.key]; e.preventDefault(); }
+  if (KEYS[e.key] && mode === 'map') {
+    e.preventDefault();
+    if (e.repeat) return;
+    keysDown = keysDown.filter((k) => k !== KEYS[e.key]).concat(KEYS[e.key]);
+    moveHeld = KEYS[e.key];
+  }
   if ((e.key === ' ' || e.key === 'Enter') && canAct()) { interactAdjacent(); e.preventDefault(); }
   if (e.key === 'b' && canAct()) openBag();
   if (e.key === 'm' && canAct()) openFullMap();
   if (e.key === 'Escape' && mode === 'map') { if (!overlay.hidden) { hideOverlay(); renderControls(); } else if (canAct()) openMenu(); }
 });
-window.addEventListener('keyup', (e) => { if (KEYS[e.key] === moveHeld) moveHeld = null; });
+window.addEventListener('keyup', (e) => {
+  if (!KEYS[e.key]) return;
+  keysDown = keysDown.filter((k) => k !== KEYS[e.key]);
+  moveHeld = keysDown[keysDown.length - 1] || null;
+});
+window.addEventListener('blur', () => { keysDown = []; moveHeld = null; });
 // Leaving the app pauses the game.
 document.addEventListener('visibilitychange', () => { if (document.hidden && canAct()) openMenu(); });
 
@@ -1045,6 +1233,7 @@ function inSafe() { return tileAt(FL, G.pos.x, G.pos.y) === T.SAFE; }
 
 function tryStep(dir) {
   const [dx, dy] = DIRS[dir];
+  face = dir;
   const nx = G.pos.x + dx, ny = G.pos.y + dy;
   if (!walkable(FL, nx, ny)) return;
   const obj = objectAt(nx, ny);
@@ -1052,6 +1241,7 @@ function tryStep(dir) {
   const mob = mobAt(nx, ny);
   if (mob) return startBattle(mob);
   const wasSafe = inSafe();
+  walk = { fx: G.pos.x * 16, fy: G.pos.y * 16, tx: nx * 16, ty: ny * 16, t0: performance.now(), dur: stepDur() };
   G.pos = { x: nx, y: ny };
   G.steps++;
   reveal();
@@ -1227,7 +1417,7 @@ function openFullMap() {
 
 // ---------- Bag ----------
 let bagState = { tab: 'all', sort: 'new' };
-const TABS = [['all', 'All'], ['potion', 'Potions'], ['food', 'Food'], ['bomb', 'Bombs'], ['scroll', 'Scrolls'], ['gear', 'Gear'], ['box', 'Boxes'], ['junk', 'Junk']];
+const TABS = [['all', 'All'], ['potion', 'Potions'], ['food', 'Food'], ['bomb', 'Bombs'], ['scroll', 'Scrolls'], ['gear', 'Gear'], ['box', 'Boxes'], ['junk', 'Materials']];
 
 function openBag() {
   if (!canAct()) return;
@@ -1267,7 +1457,7 @@ function renderBag(extra = '') {
     const eq = isEquipped(id);
     const side = it.type === 'potion' && G.sideFx[id] !== undefined ? ' Side effect: ' + SIDE_EFFECTS[G.sideFx[id]].text : '';
     return `<div class="item"><img src="${icon(id)}" alt="">
-      <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(it.name)} x${count(id)} ${eq ? '<span class="equipped">EQUIPPED</span>' : ''}</span><span class="ds">${isGear(id) ? gearDescHtml(id) : esc(it.desc + side)}${note ? ` <b style="color:var(--pink)">${esc(note)}</b>` : ''}</span></div>
+      <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))} x${count(id)} ${eq ? '<span class="equipped">EQUIPPED</span>' : ''}</span><span class="ds">${isGear(id) ? gearDescHtml(id) : esc(it.desc + side)}${note ? ` <b style="color:var(--pink)">${esc(note)}</b>` : ''}</span></div>
       <button class="star ${G.favs[id] ? 'on' : ''}" data-act="fav" data-id="${id}" aria-label="Favorite">★</button>
       ${act ? `<button class="act" data-act="use" data-id="${id}" ${ok ? '' : 'disabled'}>${act}</button>` : ''}</div>`;
   }).join('') || '<p class="muted">Nothing here yet.</p>';
@@ -2012,11 +2202,18 @@ function drawTile(x, y, sx, sy) {
 }
 
 let frame = 0;
+function shadow(x, y) { ctx.fillStyle = 'rgba(10,7,18,0.35)'; ctx.fillRect(Math.round(x) + 4, Math.round(y) + 14, 8, 2); ctx.fillRect(Math.round(x) + 3, Math.round(y) + 15, 10, 1); }
 function drawMap() {
-  const tx = G.pos.x * 16, ty = G.pos.y * 16;
-  heroDraw.x += (tx - heroDraw.x) * 0.35; heroDraw.y += (ty - heroDraw.y) * 0.35;
-  if (Math.abs(tx - heroDraw.x) < 0.5) heroDraw.x = tx;
-  if (Math.abs(ty - heroDraw.y) < 0.5) heroDraw.y = ty;
+  const now = performance.now();
+  let heroFrame = 0;
+  if (walk && walking(now)) {
+    const p = (now - walk.t0) / walk.dur;
+    heroDraw.x = walk.fx + (walk.tx - walk.fx) * p;
+    heroDraw.y = walk.fy + (walk.ty - walk.fy) * p;
+    if (p < 0.5) heroFrame = G.steps % 2 ? 1 : 2; // alternate feet each step
+  } else { heroDraw.x = G.pos.x * 16; heroDraw.y = G.pos.y * 16; }
+  const mdt = Math.min(0.1, (now - (drawMap.last || now)) / 1000);
+  drawMap.last = now;
   const camX = Math.round(clamp(heroDraw.x + 8 - 120, 0, Math.max(0, FL.w * 16 - 240)));
   const camY = Math.round(clamp(heroDraw.y + 8 - 80, 0, Math.max(0, FL.h * 16 - 160)));
   const x0 = Math.floor(camX / 16), y0 = Math.floor(camY / 16);
@@ -2035,14 +2232,27 @@ function drawMap() {
   for (const b of FL.shops || []) if (onScreen(b) && seen(b.x, b.y)) draw(sprite('shop'), b.x * 16, b.y * 16, 0);
   if (onScreen(FL.doc) && seen(FL.doc.x, FL.doc.y)) draw(docSprite(), FL.doc.x * 16, FL.doc.y * 16);
   for (const b of FL.bosses) if (onScreen(b) && !G.bossesDead.includes(b.id) && seen(b.x, b.y)) draw(sprite(BOSSES[b.type].sprite), b.x * 16, b.y * 16, bob);
+  // Characters are drawn back to front so nearer ones overlap farther ones, each on a soft shadow.
+  const actors = [];
+  const glide = 16 / (stepDur() / 1000) * mdt;
   for (const m of mobsLive) {
+    if (m.px === undefined || Math.abs(m.px - m.x * 16) > 32 || Math.abs(m.py - m.y * 16) > 32) { m.px = m.x * 16; m.py = m.y * 16; }
+    const ddx = m.x * 16 - m.px, ddy = m.y * 16 - m.py;
+    if (ddx) { m.faceLeft = ddx < 0; m.px += Math.sign(ddx) * Math.min(Math.abs(ddx), glide); }
+    if (ddy) m.py += Math.sign(ddy) * Math.min(Math.abs(ddy), glide);
     if (!onScreen(m) || (!seen(m.x, m.y) && !(G.radar > 0))) continue;
-    const lead = m.members[0];
-    draw(mobSprite(MOBS[lead.type].sprite, lead.traits), m.x * 16, m.y * 16, ((frame >> 3) + m.x) % 2);
-    if (m.elite) { ctx.fillStyle = '#f5c542'; ctx.fillRect(m.x * 16 - camX + 6, m.y * 16 - camY - 2, 4, 2); }
-    for (let i = 1; i < m.members.length; i++) { ctx.fillStyle = '#ff5fa2'; ctx.fillRect(m.x * 16 - camX + 12 - i * 3, m.y * 16 - camY + 14, 2, 2); }
+    actors.push({ y: m.py, fn: () => {
+      const lead = m.members[0];
+      const moving = ddx || ddy;
+      const img = mobSprite(MOBS[lead.type].sprite, lead.traits);
+      shadow(m.px - camX, m.py - camY);
+      draw(m.faceLeft ? flipped(img) : img, m.px, m.py, moving ? -1 : ((frame >> 5) + m.id.length) % 2);
+      if (m.elite) { ctx.fillStyle = '#f5c542'; ctx.fillRect(Math.round(m.px - camX) + 6, Math.round(m.py - camY) - 2, 4, 2); }
+      if (m.members.length > 1) { ctx.fillStyle = '#1a1426'; ctx.fillRect(Math.round(m.px - camX) + 10, Math.round(m.py - camY), 7, 7); ctx.fillStyle = '#ff5fa2'; ctx.font = '7px monospace'; ctx.fillText('' + m.members.length, Math.round(m.px - camX) + 11, Math.round(m.py - camY) + 6); }
+    } });
   }
-  draw(heroSprite(race(), cls()), heroDraw.x, heroDraw.y);
+  actors.push({ y: heroDraw.y, fn: () => { shadow(heroDraw.x - camX, heroDraw.y - camY); draw(heroSprite(race(), cls(), face, heroFrame), heroDraw.x, heroDraw.y, heroFrame ? -1 : 0); } });
+  actors.sort((a, b) => a.y - b.y).forEach((a) => a.fn());
   drawMiniMap();
 }
 
@@ -2140,7 +2350,7 @@ function drawBattle() {
     }
   }
   if (FX.heroFlash > 0) FX.heroFlash--;
-  if (FX.heroFlash % 4 < 2) ctx.drawImage(heroSprite(race(), cls()), 28, 92, 48, 48);
+  if (FX.heroFlash % 4 < 2) ctx.drawImage(heroSprite(race(), cls(), 'right'), 28, 92, 48, 48);
   drawFx();
 }
 function ellipse(cx, cy, rx, ry) { ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill(); }
@@ -2174,8 +2384,9 @@ function loop(now) {
       }
       hudTick += dt;
       if (hudTick > 0.5) { hudTick = 0; updateHud(); }
-      const delay = hasPerk('quickfeet') ? 110 : 150;
-      if (moveHeld && now - lastStep > delay) { lastStep = now; tryStep(moveHeld); }
+      // Start the next step right as the current one finishes. Bumping a wall just turns you.
+      if (moveHeld && !walking(now) && now - lastStep > 60) { lastStep = now; tryStep(moveHeld); }
+      else if (!moveHeld && !walking(now)) lastStep = 0;
     }
     if (mode === 'map') drawMap();
   } else if (mode === 'battle' && B) {

@@ -59,8 +59,37 @@ export function sprite(name, over = null, key = '') {
   return c;
 }
 
-export function heroSprite(race, cls) {
-  return sprite('hero', { s: race.skin, S: race.shade, h: race.hair || '#5b3a29', b: cls.coat, B: cls.coatLight }, race.id + cls.id);
+// Hero poses: facing down, up or sideways, each with an idle frame and two walking frames.
+const HERO_BACK = ['................', '.....kkkkkk.....', '....khhhhhhk....', '...khhhhhhhhk...', '...khhhhhhhhk...', '...khhhhhhhhk...', '...kshhhhhhsk...', '....kSSSSSSk....', '...kkbbbbbbkk...', '..kbbbbbbbbbbk..', '..ksbbbbbbbbsk..', '..kskbbbbbbksk..', '...kkbbbbbbkk...', '....kookkook....', '....kkk..kkk....', '................'];
+const HERO_SIDE = ['................', '.....kkkkkk.....', '....khhhhhhk....', '...khhhhhhhhk...', '...ksssshhhhk...', '...kskssshhhk...', '..kssssssshhk...', '....ksSSSssk....', '....kkbbbbkk....', '....kbbBbbbk....', '....kbsBbbbk....', '....kbskbbbk....', '....kkbbbbkk....', '.....kookok.....', '.....kkkkkk.....', '................'];
+const LEGS = {
+  front: [['....kookkook....', '....kkk..kkk....'], ['....kookkkk.....', '....kkk.........'], ['.....kkkkook....', '.........kkk....']],
+  side: [['.....kookok.....', '.....kkkkkk.....'], ['....kook.kok....', '....kkk...kk....'], ['.....kookk......', '.....kkkk.......']],
+};
+function withLegs(rows, legs) { return [...rows.slice(0, 13), legs[0], legs[1], rows[15]]; }
+for (let f = 0; f < 3; f++) {
+  MAPS['hero_down' + f] = withLegs(MAPS.hero, LEGS.front[f]);
+  MAPS['hero_up' + f] = withLegs(HERO_BACK, LEGS.front[f]);
+  MAPS['hero_left' + f] = withLegs(HERO_SIDE, LEGS.side[f]);
+}
+function mirror(c) {
+  const m = document.createElement('canvas');
+  m.width = 16; m.height = 16;
+  const g = m.getContext('2d');
+  g.translate(16, 0); g.scale(-1, 1); g.drawImage(c, 0, 0);
+  return m;
+}
+const mirrorCache = new Map();
+export function flipped(c) {
+  if (!mirrorCache.has(c)) mirrorCache.set(c, mirror(c));
+  return mirrorCache.get(c);
+}
+// dir: down | up | left | right. frame: 0 standing, 1 and 2 mid-step.
+export function heroSprite(race, cls, dir = 'down', frame = 0) {
+  const over = { s: race.skin, S: race.shade, h: race.hair || '#5b3a29', b: cls.coat, B: cls.coatLight };
+  const base = dir === 'right' ? 'left' : dir;
+  const c = sprite('hero_' + base + frame, over, race.id + cls.id);
+  return dir === 'right' ? flipped(c) : c;
 }
 
 export function docSprite() {

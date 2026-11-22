@@ -159,7 +159,7 @@ export function generateFloor(seed, floor, opts = {}) {
 
   // 8. Decorations: puddles, cracks and litter.
   const decor = new Uint8Array(W * H);
-  for (let i = 0; i < W * H; i++) if (tiles[i] === T.FLOOR && rng.chance(0.06)) decor[i] = rng.int(1, 3);
+  for (let i = 0; i < W * H; i++) if (tiles[i] === T.FLOOR && rng.chance(0.03)) decor[i] = rng.int(1, 3);
 
   const rule = rng.pick(FLOOR_RULES);
   return { w: W, h: H, tiles, decor, rooms, start: { x: start.cx, y: start.cy }, stairs, bosses, doc, booths, benches, shops, safeRoom, safeRooms, chests, mobs, rule, far, dist };
