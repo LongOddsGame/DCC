@@ -110,8 +110,11 @@ label { font-size: 15px; color: var(--muted); }
 .bookie img { width: 48px; height: 48px; image-rendering: pixelated; flex: none; }
 
 /* Bag */
-.tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
-.tab { height: 40px; padding: 0 12px; background: var(--panel); border: 2px solid var(--edge2); font-size: 15px; white-space: nowrap; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 2px; }
+.tabs.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tabs > .tab { flex: 1 1 0; min-width: max-content; }
+.tabs.grid4 > .tab { min-width: 0; }
+.tab { height: 40px; padding: 0 8px; background: var(--panel); border: 2px solid var(--edge2); font-size: 15px; white-space: nowrap; }
 .tab.on { border-color: var(--cyan); color: var(--cyan); }
 .items { display: flex; flex-direction: column; gap: 6px; }
 .item { display: flex; align-items: center; gap: 8px; background: var(--panel); border: 2px solid var(--edge2); padding: 6px 8px; }
@@ -208,3 +211,4 @@ textarea { width: 100%; font-family: var(--body); font-size: 18px; line-height: 
 .bar.thin { height: 8px; }
 .fill.xp { background: var(--gold); }
 .bar-num.wide { width: auto; min-width: 54px; color: var(--gold); }
+.tabs-lbl { align-self: center; font-size: 14px; color: var(--muted); }

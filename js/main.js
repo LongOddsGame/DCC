@@ -1545,8 +1545,8 @@ function renderBag(extra = '') {
     <div class="row-between"><h2>BAG</h2><span class="muted" style="font-size:14px">${total} items · no limit</span></div>
     ${extra}${openAll}
     <button class="btn" data-act="gear">GEAR: EQUIP ITEMS${upgradeCount() ? ` (${upgradeCount()} UPGRADE${upgradeCount() > 1 ? 'S' : ''})` : ''}</button>
-    <div class="tabs">${TABS.map(([k, l]) => `<button class="tab ${bagState.tab === k ? 'on' : ''}" data-act="tab" data-id="${k}">${l}</button>`).join('')}</div>
-    <div class="tabs">${[['new', 'Newest'], ['rarity', 'Rarity'], ['name', 'A to Z']].map(([k, l]) => `<button class="tab ${bagState.sort === k ? 'on' : ''}" data-act="sort" data-id="${k}">Sort: ${l}</button>`).join('')}</div>
+    <div class="tabs grid4">${TABS.map(([k, l]) => `<button class="tab ${bagState.tab === k ? 'on' : ''}" data-act="tab" data-id="${k}">${l}</button>`).join('')}</div>
+    <div class="tabs"><span class="tabs-lbl">Sort</span>${[['new', 'Newest'], ['rarity', 'Rarity'], ['name', 'A to Z']].map(([k, l]) => `<button class="tab ${bagState.sort === k ? 'on' : ''}" data-act="sort" data-id="${k}">${l}</button>`).join('')}</div>
     <div class="items">${rows}</div>
     <button class="btn grey" data-act="closebag" style="position:sticky; bottom:0">CLOSE</button>`);
 }
