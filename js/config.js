@@ -2,4 +2,4 @@
 // SUGGEST_KEY: the Web3Forms access key. Web3Forms keeps the owner's email address
 // private and emails each suggestion to it. Leave empty to save suggestions on the
 // player's device until a key is added; they are sent on the next visit.
-export const SUGGEST_KEY = '';
+export const SUGGEST_KEY = '36ce22c8-60b0-4eb7-a0b4-3b1e498b995d';
