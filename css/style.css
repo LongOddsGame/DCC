@@ -261,3 +261,5 @@ textarea { width: 100%; font-family: var(--body); font-size: 18px; line-height: 
 .map-bar .chip { flex: 1; height: 38px; padding: 0 4px; font-size: 15px; }
 #hp-fill.hitflash, .bar.hit { animation: hpHit 0.5s steps(2) 1; }
 @keyframes hpHit { 0%, 100% { box-shadow: none; } 50% { box-shadow: 0 0 0 3px var(--red); background: #3a1020; } }
+.shop-toast { position: sticky; bottom: 56px; z-index: 2; background: var(--night); border: 2px solid var(--edge); padding: 6px 10px; margin-top: 8px; }
+.item .craft-btns .act { min-width: 92px; font-size: 13px; }

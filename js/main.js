@@ -228,7 +228,11 @@ function buildFloor() {
   indexObjects();
 }
 
+// Save right after the screen has updated, so the save never holds up the box reveal.
+let saveTimer = 0;
+function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(() => { if (G) save(); }, 250); }
 function save() {
+  clearTimeout(saveTimer);
   if (SEEN) G.seen = encodeSeen(SEEN);
   writeSlot(G.slot, JSON.parse(JSON.stringify(G)));
 }
@@ -982,9 +986,16 @@ function shopRow(id, special, bought) {
   return `<div class="item ${worth ? 'worth' : ''}"><img src="${icon(id)}" alt="">
     <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(it.name)}${worth ? (isGear(id) ? ' <span class="badge up">UPGRADE</span>' : ' <span class="badge new">NEW MOVE</span>') : ''}${count(id) ? ` <span class="have">have ${count(id)}</span>` : ''}</span>
     <span class="ds">${isGear(id) ? gearDescHtml(id) : esc(it.desc)}</span></div>
-    <button class="act gold" data-act="buy" data-id="${id}" data-sp="${special ? 1 : 0}" ${gone || G.tokens < p ? 'disabled' : ''}>${gone ? 'Sold out' : p + ' tokens'}</button></div>`;
+    ${special
+    ? `<button class="act gold" data-act="buy" data-id="${id}" data-sp="1" ${gone || G.tokens < p ? 'disabled' : ''}>${gone ? 'Sold out' : p + ' tokens'}</button>`
+    : (() => { const max = Math.floor(G.tokens / p); return `<div class="craft-btns">
+      <button class="act gold" data-act="buy" data-id="${id}" data-n="1" ${max < 1 ? 'disabled' : ''}>Buy 1 · ${p}</button>
+      <button class="act gold" data-act="buy" data-id="${id}" data-n="5" ${max < 5 ? 'disabled' : ''}>Buy 5 · ${p * 5}</button>
+      <button class="act gold" data-act="buy" data-id="${id}" data-n="max" ${max < 2 ? 'disabled' : ''}>Max${max >= 2 ? ' · ' + max : ''}</button></div>`; })()}</div>`;
 }
-function renderShop(extra = '') {
+// Buying or selling keeps your place in the list; the result shows as a note pinned above LEAVE SHOP.
+function renderShop(extra = '', keepScroll = true) {
+  const scroll = keepScroll ? overlay.scrollTop : 0;
   const t = shopTier();
   const next = SHOP_TIERS[t + 1];
   let body;
@@ -1007,38 +1018,45 @@ function renderShop(extra = '') {
         const it = ITEMS[id];
         return `<div class="item"><img src="${icon(id)}" alt="">
           <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(it.name)} x${count(id)}${junk.includes(id) ? ' <span class="junk-tag">JUNK</span>' : ''}</span><span class="ds">${isGear(id) ? esc(SLOT_NAMES[it.type] + ': ' + statText(id)) : esc(it.desc)}</span></div>
-          <button class="act" data-act="sell" data-id="${id}">Sell ${sellPrice(id)}</button></div>`;
+          <div class="craft-btns"><button class="act" data-act="sell" data-id="${id}" data-n="1">Sell 1 · ${sellPrice(id)}</button>${spareCopies(id) > 1 ? `<button class="act" data-act="sell" data-id="${id}" data-n="all">All ${spareCopies(id)} · ${sellPrice(id) * spareCopies(id)}</button>` : ''}</div></div>`;
       }).join('') || '<p class="muted">Nothing to sell.</p>'}</div>`;
   }
   showOverlay(`
     <div class="row-between"><h2>PENNY'S PAWN</h2><span class="tok">${G.tokens} tokens</span></div>
     <div class="bookie"><img src="${sprite('shop').toDataURL()}" alt=""><p><b style="color:var(--gold)">PENNY:</b> ${esc(shopState.line)}</p></div>
-    ${extra}
     <p class="muted" style="font-size:15px">Penny restocks every time you level up or reach a new floor, and her gear gets rarer with each level you gain. ${next ? `New supplies and scrolls unlock at level ${next.lvl}.` : 'Every shelf is open.'}</p>
     <div class="tabs"><button class="tab ${shopState.tab === 'buy' ? 'on' : ''}" data-act="shoptab" data-id="buy">Buy</button><button class="tab ${shopState.tab === 'sell' ? 'on' : ''}" data-act="shoptab" data-id="sell">Sell</button><button class="tab" data-act="shopgear">My gear</button></div>
     ${body}
+    ${extra ? `<div class="shop-toast">${extra}</div>` : ''}
     <button class="btn grey" data-act="shopclose" style="position:sticky; bottom:0">LEAVE SHOP</button>`);
+  overlay.scrollTop = scroll;
 }
 Object.assign(overlayHandlers, {
-  shoptab: (_, b) => { shopState.tab = b.dataset.id; renderShop(); },
+  shoptab: (_, b) => { shopState.tab = b.dataset.id; renderShop('', false); },
   shopgear: () => { gearState = { slot: null, from: 'shop' }; renderGear(); },
   buy: (_, b) => {
     const id = b.dataset.id;
     const p = priceOf(id);
-    if (G.tokens < p) return;
-    G.tokens -= p;
-    addItem(id);
-    if (b.dataset.sp === '1') (G.shopBought[stockKey()] = G.shopBought[stockKey()] || []).push(id);
+    const special = b.dataset.sp === '1';
+    const afford = Math.floor(G.tokens / p);
+    const n = special ? 1 : Math.min(afford, b.dataset.n === 'max' ? afford : Number(b.dataset.n) || 1);
+    if (n < 1) return;
+    G.tokens -= p * n;
+    addItem(id, n, true);
+    if (special) (G.shopBought[stockKey()] = G.shopBought[stockKey()] || []).push(id);
     updateHud();
-    renderShop(equipNowHtml(id, 'shop') || `<p class="note good">Bought ${esc(ITEMS[id].name)}.</p>`);
+    renderShop(equipNowHtml(id, 'shop') || `<p class="note good">Bought ${esc(ITEMS[id].name)}${n > 1 ? ' x' + n : ''} for ${p * n} tokens.</p>`);
   },
   sell: (_, b) => {
     const id = b.dataset.id;
-    if (spareCopies(id) <= 0) return;
-    G.tokens += sellPrice(id);
-    removeItem(id);
+    const spare = spareCopies(id);
+    if (spare <= 0) return;
+    const n = b.dataset.n === 'all' ? spare : 1;
+    const price = sellPrice(id);
+    G.tokens += price * n;
+    removeItem(id, n);
     updateHud();
-    renderShop(`<p class="note good">Sold ${esc(ITEMS[id].name)} for ${sellPrice(id)} tokens.</p>`);
+    renderShop(`<p class="note good">Sold ${esc(ITEMS[id].name)}${n > 1 ? ' x' + n : ''} for ${price * n} tokens.</p>`);
   },
   selljunk: () => {
     let v = 0;
@@ -1901,10 +1919,10 @@ function openBox(id) {
   const loot = openOneBox(id);
   say(`Opened a <span class="loot">${esc(ITEMS[id].name)}</span>.`);
   updateHud();
-  save();
-  renderBag(`<div class="reveal"><div class="box-big"><img src="${boxSprite(id).toDataURL()}" alt=""></div>
+  renderBag(`<div class="reveal"><div class="box-big"><img src="${icon(id)}" alt=""></div>
     <p class="banner gold">${esc(ITEMS[id].name).toUpperCase()}!</p>${lootRows(loot.items)}
     <div class="item"><div class="txt"><span class="nm" style="color:var(--gold)">${loot.tokens} tokens</span></div></div></div>`);
+  saveSoon();
 }
 function openAllBoxes() {
   if (!inSafe()) return;
@@ -1921,10 +1939,10 @@ function openAllBoxes() {
   say(`Opened <span class="loot">${opened} loot boxes</span>!`);
   bookie(opened >= 5 ? 'Look at that haul. The Patrons are jealous, and they own islands.' : 'Unboxing on live TV. Classic content.');
   updateHud();
-  save();
-  renderBag(`<div class="reveal"><div class="box-big"><img src="${boxSprite('box_gold').toDataURL()}" alt=""></div>
+  renderBag(`<div class="reveal"><div class="box-big"><img src="${icon('box_gold')}" alt=""></div>
     <p class="banner gold">${opened} BOXES OPENED!</p>${lootRows(all)}
     <div class="item"><div class="txt"><span class="nm" style="color:var(--gold)">${tokens} tokens</span></div></div></div>`);
+  saveSoon();
 }
 
 // ---------- Pause menu ----------
@@ -2920,7 +2938,8 @@ function loop(now) {
       if (moveHeld && !spotted && !walking(now) && now - lastStep > 60) { lastStep = now; tryStep(moveHeld); }
       else if (!moveHeld && !walking(now)) lastStep = 0;
     }
-    if (mode === 'map') drawMap();
+    // The bag, shop and menus cover the whole screen, so skip drawing the map under them (smoother on phones).
+    if (mode === 'map' && overlay.hidden) drawMap();
   } else if (mode === 'battle' && B) {
     drawBattle();
   } else drawIdle();
