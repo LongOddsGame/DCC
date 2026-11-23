@@ -199,9 +199,10 @@ export function generateFloor(seed, floor, opts = {}) {
 
   // Mob groups: more traits, bigger groups and more elites in later stages.
   let mi = 0;
-  // Every fight room has mobs, and some get a second group (more mobs, fewer boxes after playtesting).
+  // Every fight room has at least two groups, and many get a third (owner: too easy, more mobs).
+  // Deeper floors and later stages pack rooms tighter.
   for (const r of fightRooms) {
-    const groups = 1 + (rng.chance(0.35) ? 1 : 0);
+    const groups = 2 + (rng.chance(0.4 + 0.15 * (floor - 1) + depthOf(r) * 0.2) ? 1 : 0);
     for (let gi = 0; gi < groups; gi++) {
       const p = freeSpot(r);
       if (!p) continue;
@@ -225,7 +226,8 @@ export function stageAt(fl, x) {
 
 export function makeGroup(rng, types, traitIds, depth, elite) {
   const roll = rng.next();
-  const size = roll < 0.5 - depth * 0.2 ? 1 : roll < 0.85 - depth * 0.1 ? 2 : 3;
+  // Bigger packs than before (owner: more mobs). Lone mobs get rare near the bosses.
+  const size = roll < 0.3 - depth * 0.15 ? 1 : roll < 0.72 - depth * 0.12 ? 2 : 3;
   const members = [];
   for (let m = 0; m < size; m++) {
     const tr = rng.next() - depth * 0.25;
