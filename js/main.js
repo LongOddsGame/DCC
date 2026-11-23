@@ -220,8 +220,8 @@ function newGame(slot, name, jobId, raceId, clsId, tutorial = true, perks = [], 
   if (raceId === 'ghoul') G.doc.fear += 10;
   const s = stats();
   G.hp = s.maxHp; G.mp = s.maxMp;
-  addItem('potion_heal', 3, true);
-  addItem('food_pretzel', 2, true);
+  addItem('potion_heal', 2, true);
+  addItem('food_pretzel', 1, true);
   addItem('w_pipe', 1, true);
   G.equip.weapon = 'w_pipe';
   if (clsId === 'scrapper') addItem('bomb', 3, true);
@@ -281,8 +281,22 @@ function loadSlot(i) {
 function flashHp() {
   const bar = $('hp-fill').parentElement;
   bar.classList.remove('hit'); void bar.offsetWidth; bar.classList.add('hit');
+  // Whole screen flashes red when you get hit.
+  const h = $('hurt');
+  if (h) { h.classList.remove('flash'); void h.offsetWidth; h.classList.add('flash'); }
+  lowHpPulse();
+}
+// Red edge that pulses when HP is low (under 35%), blinking faster the lower it gets.
+function lowHpPulse() {
+  const h = $('hurt');
+  if (!h) return;
+  const max = G ? stats().maxHp : 1, pct = G && G.hp > 0 ? G.hp / max : 1;
+  const low = !!G && (mode === 'map' || mode === 'battle') && G.hp > 0 && pct < 0.35;
+  h.classList.toggle('low', low);
+  if (low) h.style.setProperty('--pulse', (0.35 + (pct / 0.35) * 0.95).toFixed(2) + 's');
 }
 function updateHud() {
+  lowHpPulse();
   if (!G) return;
   const s = stats();
   $('hud-floor').textContent = G.floor === 0 ? 'TUTORIAL' : 'F' + G.floor + ' THE LOBBY';
@@ -296,7 +310,7 @@ function updateHud() {
   $('hp-text').textContent = Math.max(0, Math.round(G.hp));
   $('mp-text').textContent = Math.round(G.mp);
   $('hud-lvl').textContent = G.lvl;
-  const need = G.lvl * 20;
+  const need = xpNeed(G.lvl);
   $('xp-fill').style.width = clamp((G.xp / need) * 100, 0, 100) + '%';
   $('xp-text').textContent = G.xp + '/' + need;
   const h = Math.floor(G.hype);
@@ -316,7 +330,7 @@ const TRASH = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" strok
 
 let titleState = { confirm: -1, updateMsg: '', update: null };
 function showTitle() {
-  mode = 'title';
+  mode = 'title'; lowHpPulse();
   G = null; FL = null; B = null; prompt = null;
   $('hud').hidden = true;
   clearLog();
@@ -415,6 +429,17 @@ function startCreate(slot) {
   cr = { slot, step: 'who', name: '', sex: 'm', offers: rollJobOffers(), job: null, perks: [], race: 'human', classes, cls: classes[0] };
   renderCreate();
 }
+// Random names: a first name (by sex) plus a goofy nickname, at most 14 letters.
+const NAMES_M = ['Gus', 'Dale', 'Rex', 'Moe', 'Hank', 'Lou', 'Vic', 'Ned', 'Otis', 'Buck', 'Earl', 'Milo', 'Sal', 'Ray', 'Duke', 'Abe', 'Cliff', 'Bo', 'Stan', 'Tito'];
+const NAMES_F = ['Bev', 'Dot', 'Pam', 'Rita', 'Gail', 'Mo', 'Trix', 'Jo', 'Nell', 'Vera', 'Lu', 'Fay', 'Bea', 'Roz', 'Kit', 'Ida', 'Peg', 'Tess', 'Viv', 'Opal'];
+const NICKS = ['the Brave', 'Two-Socks', 'the Loud', 'Big Tuna', 'the Lucky', 'Ironside', 'the Sneaky', 'Quickfoot', 'the Bold', 'No-Refund', 'Pocketful', 'the Sweaty', 'Longshot', 'the Grim', 'Hotdog', 'the Late', 'Boxcar', 'the Mild'];
+function randomName(sex) {
+  for (let i = 0; i < 20; i++) {
+    const n = R.pick(sex === 'f' ? NAMES_F : NAMES_M) + ' ' + R.pick(NICKS);
+    if (n.length <= 14) return n;
+  }
+  return R.pick(sex === 'f' ? NAMES_F : NAMES_M);
+}
 function createReady() { return cr.name.trim() && cr.job && cr.perks.length === 2; }
 function offerFor(jobId) { return cr.offers.find((o) => o.job === jobId); }
 function modsText(m) { return Object.entries(m).map(([k, v]) => (v > 0 ? '+' : '') + v + ' ' + STAT_NAMES[k]).join(', '); }
@@ -428,7 +453,8 @@ function renderCreate() {
       <p class="muted">Before the world started ending, you were just a regular person.</p>
       <div class="preview"><img src="${preview}" alt=""><div style="flex:1">
         <label for="nm">Your name</label>
-        <input id="nm" type="text" maxlength="14" autocomplete="off" value="${esc(cr.name)}" placeholder="Type a name"></div></div>
+        <input id="nm" type="text" maxlength="14" autocomplete="off" value="${esc(cr.name)}" placeholder="Type a name">
+        <button class="btn grey" data-act="randname" style="margin-top:6px; width:100%">🎲 RANDOM NAME</button></div></div>
       <div class="grid2"><button class="btn ${cr.sex === 'm' ? 'gold' : 'grey'}" data-act="sex" data-id="m">♂ MALE</button><button class="btn ${cr.sex === 'f' ? 'gold' : 'grey'}" data-act="sex" data-id="f">♀ FEMALE</button></div>
       <div class="grid2"><button class="btn grey" data-act="back">BACK</button><button class="btn green" data-act="next" ${cr.name.trim() ? '' : 'disabled'}>NEXT</button></div>`);
     const input = $('nm');
@@ -494,6 +520,7 @@ Object.assign(overlayHandlers, {
   },
   job: (_, b) => { if (cr.job !== b.dataset.id) { cr.job = b.dataset.id; cr.perks = []; } renderCreate(); },
   sex: (_, b) => { cr.sex = b.dataset.id; renderCreate(); },
+  randname: () => { cr.name = randomName(cr.sex); renderCreate(); },
   race: (_, b) => { cr.race = b.dataset.id; renderCreate(); },
   cls: (_, b) => { cr.cls = b.dataset.id; renderCreate(); },
   next: () => { cr.step = CREATE_STEPS[CREATE_STEPS.indexOf(cr.step) + 1]; renderCreate(); },
@@ -958,7 +985,8 @@ function badgeHtml(id) {
 function shopTier() { let t = 0; SHOP_TIERS.forEach((x, i) => { if (G.lvl >= x.lvl) t = i; }); return t; }
 function priceOf(id) {
   const it = ITEMS[id];
-  let p = it.price || RARITY_PRICE[it.rarity] || 6;
+  // Prices raised 60% after playtesting (owner: shop prices were too low).
+  let p = Math.round((it.price || RARITY_PRICE[it.rarity] || 6) * 1.6);
   if (isGear(id) || it.type === 'scroll') p = Math.round(p * 1.25);
   if (cls().haggle) p = Math.max(1, Math.round(p * 0.8));
   if (chaBonus()) p = Math.max(1, Math.round(p * (1 - Math.max(-0.1, Math.min(0.25, chaBonus() * 0.02)))));
@@ -1013,15 +1041,22 @@ function shopRow(id, special, bought) {
   const worth = !gone && worthBuying(id);
   return `<div class="item ${worth ? 'worth' : ''}"><img src="${icon(id)}" alt="">
     <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(it.name)}${worth ? (isGear(id) ? ' <span class="badge up">UPGRADE</span>' : ' <span class="badge new">NEW MOVE</span>') : ''}${count(id) ? ` <span class="have">have ${count(id)}</span>` : ''}</span>
-    <span class="ds">${isGear(id) ? gearDescHtml(id) : esc(it.desc)}</span></div>
+    <span class="ds">${isGear(id) ? gearDescHtml(id) : esc(it.desc)}${it.type === 'box' ? ` <b style="color:var(--gold)">${boxLeft(id)} left until Penny restocks.</b>` : ''}</span></div>
     ${special
     ? `<button class="act gold" data-act="buy" data-id="${id}" data-sp="1" ${gone || G.tokens < p ? 'disabled' : ''}>${gone ? 'Sold out' : p + ' tokens'}</button>`
-    : (() => { const max = Math.floor(G.tokens / p); return `<div class="craft-btns">
+    : (() => { const max = Math.min(Math.floor(G.tokens / p), boxLeft(id)); return `<div class="craft-btns">
       <button class="act gold" data-act="buy" data-id="${id}" data-n="1" ${max < 1 ? 'disabled' : ''}>Buy 1 · ${p}</button>
       <button class="act gold" data-act="buy" data-id="${id}" data-n="5" ${max < 5 ? 'disabled' : ''}>Buy 5 · ${p * 5}</button>
       <button class="act gold" data-act="buy" data-id="${id}" data-n="max" ${max < 2 ? 'disabled' : ''}>Max${max >= 2 ? ' · ' + max : ''}</button></div>`; })()}</div>`;
 }
 // Buying or selling keeps your place in the list; the result shows as a note pinned above LEAVE SHOP.
+// Penny only has 3 of each loot box per restock (she restocks on level up or a new floor).
+const BOX_STOCK = 3;
+function boxLeft(id) {
+  if (ITEMS[id].type !== 'box') return Infinity;
+  const k = stockKey() + ':' + id;
+  return Math.max(0, BOX_STOCK - ((G.boxBuys && G.boxBuys[k]) || 0));
+}
 function renderShop(extra = '', keepScroll = true) {
   const scroll = keepScroll ? overlay.scrollTop : 0;
   const t = shopTier();
@@ -1069,8 +1104,9 @@ Object.assign(overlayHandlers, {
     const p = priceOf(id);
     const special = b.dataset.sp === '1';
     const afford = Math.floor(G.tokens / p);
-    const n = special ? 1 : Math.min(afford, b.dataset.n === 'max' ? afford : Number(b.dataset.n) || 1);
+    const n = special ? 1 : Math.min(afford, boxLeft(id), b.dataset.n === 'max' ? afford : Number(b.dataset.n) || 1);
     if (n < 1) return;
+    if (ITEMS[id].type === 'box') { G.boxBuys = G.boxBuys || {}; const k = stockKey() + ':' + id; G.boxBuys[k] = (G.boxBuys[k] || 0) + n; }
     G.tokens -= p * n;
     addItem(id, n, true);
     if (ITEMS[id].type === 'box') addBound(id, n);
@@ -1491,7 +1527,7 @@ function checkSpotted(dt) {
   const room = roomAt(FL, G.pos.x, G.pos.y);
   const m = mobsLive.find((x) => !x.still && !(x.stun > 0) && ((room && roomAt(FL, x.x, x.y) === room) || lineOfSight(x, G.pos, 5)));
   if (!m) return;
-  spotted = { m, t: 0.7 };
+  spotted = { m, t: 0.9 };
   moveHeld = null;
   say(`<b>${esc(MOBS[m.members[0].type].name)}</b> spotted you! Here it comes!`);
 }
@@ -1632,7 +1668,7 @@ function moveMobs() {
     for (const [ox, oy] of opts) {
       if (!ox && !oy) continue;
       const nx = m.x + ox, ny = m.y + oy;
-      if (nx === hero.x && ny === hero.y) { startBattle(m); return; }
+      if (nx === hero.x && ny === hero.y) { if (!spotted) { spotted = { m, t: 0.8 }; moveHeld = null; say(`<b>${esc(MOBS[m.members[0].type].name)}</b> jumps you!`); } return; }
       const t = tileAt(FL, nx, ny);
       if (t === T.WALL || t === T.SAFE || t === T.STAIRS || objectAt(nx, ny) || mobAt(nx, ny)) continue;
       m.x = nx; m.y = ny;
@@ -1919,7 +1955,7 @@ function consume(id) {
     if (r === 0) { heal = 40; say('It tastes like cherries and regret.'); }
     if (r === 1) { G.mp = s.maxMp; say('Your head buzzes. MP fully restored!'); }
     if (r === 2) { setBuff('atk', 3); say('You feel STRONG. +3 attack for your next fight.'); }
-    if (r === 3) { G.hp = Math.max(1, G.hp - 6); say('Ugh. It was mostly drain cleaner. -6 HP.'); }
+    if (r === 3) { G.hp = Math.max(1, G.hp - 6); flashHp(); say('Ugh. It was mostly drain cleaner. -6 HP.'); }
   }
   if (it.guide) {
     if (FL.tutorial || !FL.bosses.some((b) => !G.bossesDead.includes(b.id))) say('The potion fizzes. There are no bosses left to find here.');
@@ -2031,7 +2067,7 @@ function openMenu(force = false) {
     <p class="banner banner-paused" style="color:var(--cyan)">PAUSED</p>
     <p class="muted" style="text-align:center">The game is stopped${G.radar > 0 ? `, including your Mob Radar (${Math.ceil(G.radar)}s left)` : ''}.</p>
     <h2>${esc(G.name).toUpperCase()}</h2>
-    <p class="muted">${G.sex === 'f' ? 'Female' : 'Male'} ${esc(race().name)} ${esc(cls().name)}, former ${esc(job().name.toLowerCase())}. Level ${G.lvl} (${G.xp} / ${G.lvl * 20} XP)</p>
+    <p class="muted">${G.sex === 'f' ? 'Female' : 'Male'} ${esc(race().name)} ${esc(cls().name)}, former ${esc(job().name.toLowerCase())}. Level ${G.lvl} (${G.xp} / ${xpNeed(G.lvl)} XP)</p>
     <div class="stat-list">
       <span>HP <b>${Math.round(G.hp)} / ${s.maxHp}</b></span><span>MP <b>${Math.round(G.mp)} / ${s.maxMp}</b></span>
       <span>Attack <b>${s.atk}</b></span><span>Defense <b>${s.def}</b></span>
@@ -2094,7 +2130,7 @@ function openSheet(from = 'menu') {
     <div class="talk-head"><img src="${heroSprite(race(), c, 'down', 0, G.sex).toDataURL()}" alt=""><div class="who">
       <b style="font-size:18px">${esc(G.name)}</b>
       <span class="muted" style="font-size:14px">${G.sex === 'f' ? 'Female' : 'Male'} ${esc(race().name)} ${esc(c.name)}, former ${esc(job().name.toLowerCase())}</span>
-      <span style="font-size:14px;color:var(--cyan)">Level ${G.lvl} · ${G.xp} / ${G.lvl * 20} XP</span></div></div>
+      <span style="font-size:14px;color:var(--cyan)">Level ${G.lvl} · ${G.xp} / ${xpNeed(G.lvl)} XP</span></div></div>
     <h2>CHARACTER SHEET</h2>
     <div class="sheet">${rows}</div>
     <p style="font-size:15px"><b style="color:var(--gold)">${esc(c.skill.name)}</b> (${c.skill.mp} MP): ${esc(c.skill.desc)}</p>
@@ -2114,8 +2150,9 @@ function makeEnemy(member, i, depth = 0) {
   const e = { id: i, name: base.name, sprite: base.sprite, atkKey: base.sprite, hp: base.hp, atk: base.atk, def: base.def, spd: base.spd, xp: base.xp, tokens: base.tokens, drops: base.drops, traits: member.traits.slice(), elite: member.elite, alive: true, flash: 0, slash: 0, intent: 'attack', begged: false, poison: 0, frozen: 0 };
   if (e.traits.includes('armored')) e.def += 3;
   if (e.elite) { e.hp = Math.round(e.hp * 1.6); e.atk += 2; e.xp *= 2; }
-  const scale = 1 + (G.lvl - 1) * 0.12 + depth * 0.6;
-  e.hp = Math.round(e.hp * scale); e.atk = Math.round(e.atk * scale); e.xp = Math.round(e.xp * (1 + depth));
+  // Difficulty (raised after playtesting): mobs have 30% more health and hit 25% harder, and grow faster with your level.
+  const scale = 1 + (G.lvl - 1) * 0.15 + depth * 0.6;
+  e.hp = Math.round(e.hp * 1.3 * scale); e.atk = Math.round(e.atk * 1.25 * scale); e.xp = Math.round(e.xp * (1 + depth));
   if (member.tutorial) { e.hp = 9; e.atk = 3; }
   e.maxHp = e.hp;
   const label = e.traits.map((t) => TRAITS[t].name).join(' ');
@@ -2133,7 +2170,7 @@ function startBattle(mob) {
 }
 function startBossBattle(b) {
   const d = BOSSES[b.type];
-  const e = { id: 0, name: d.name, full: d.name, sprite: d.sprite, atkKey: b.type, bossId: b.id, bossType: b.type, hp: d.hp + (G.lvl - 1) * 8, atk: d.atk + Math.floor((G.lvl - 1) / 2), def: d.def, spd: d.spd, xp: d.xp, tokens: d.tokens, drops: [], traits: [], boss: true, alive: true, flash: 0, slash: 0, intent: 'attack', begged: true, phase: 1, poison: 0, frozen: 0 };
+  const e = { id: 0, name: d.name, full: d.name, sprite: d.sprite, atkKey: b.type, bossId: b.id, bossType: b.type, hp: Math.round(d.hp * 1.8) + (G.lvl - 1) * 12, atk: d.atk + 1 + Math.floor((G.lvl - 1) / 2), def: d.def, spd: d.spd, xp: d.xp, tokens: d.tokens, drops: [], traits: [], boss: true, alive: true, flash: 0, slash: 0, intent: 'attack', begged: true, phase: 1, poison: 0, frozen: 0 };
   e.maxHp = e.hp;
   beginBattle([e], null);
   bookie(d.announce);
@@ -2173,36 +2210,42 @@ function avgDef() { const a = alive(); return a.length ? a.reduce((s, e) => s + 
 
 // Rough damage for each move kind, so the Attack menu can show and sort by it.
 // Returns { dmg } per target, plus all: true when it hits every mob, or util: text for non-damage moves.
+// Magic power: magic stat scaled to sit level with physical attack, so spell users and fighters hit about as hard.
+function magPow() { return stats().mag * 1.2 + 2; }
+// Rough damage for each move kind, so the Attack menu can show and sort by it. Same formulas as castMove.
+// Balance targets: single-target specials about 1.3-1.7x a basic hit, hit-all moves about 0.7x per mob,
+// utility moves trade damage for an effect.
 function moveEstimate(kind) {
-  const s = stats(), a = heroAtk(), d = avgDef(), m = s.mag;
+  const s = stats(), P = heroAtk() + 2, d = avgDef(), M = magPow() + 1, m = s.mag;
   const hit = (n) => Math.max(1, n);
+  const tick = 2 + Math.floor(m / 4);
   const T = {
-    double: () => ({ dmg: hit(a + 1 - d) * 2 }),
-    bolt: () => ({ dmg: m * 1.6 + 1.5 }),
-    flashy: () => ({ dmg: hit(a + 1 - d) * 1.3 }),
-    shrapnel: () => ({ dmg: hit(5 + G.lvl + m / 2 - d / 2), all: true }),
+    double: () => ({ dmg: hit(P * 1.5 - d) }),
+    bolt: () => ({ dmg: M * 1.1 }),
+    flashy: () => ({ dmg: hit(P * 1.3 - d) }),
+    shrapnel: () => ({ dmg: hit(P * 0.35 + M * 0.35 - d / 2), all: true }),
     talk: () => ({ util: 'TALK' }),
-    heal: () => ({ util: '+' + Math.round(20 + m * 1.5) + ' HP' }),
-    stun: () => ({ dmg: hit(a + 1 - d) }),
-    steal: () => ({ dmg: hit(a + 1 - d) * 1.1 }),
-    burst: () => ({ dmg: hit(4 + m * 0.9 - d / 2), all: true }),
-    freeze: () => ({ dmg: 4 + m * 0.9 }),
-    drain: () => ({ dmg: 4 + m * 1.1 }),
-    poison: () => ({ dmg: 2 + m / 2 + 3 * (3 + Math.floor(m / 3)) }),
-    multi: () => ({ dmg: 3 * hit((a + 1) * 0.6 - d) }),
+    heal: () => ({ util: '+' + Math.round(15 + m * 1.2) + ' HP' }),
+    stun: () => ({ dmg: hit(P * 0.9 - d) }),
+    steal: () => ({ dmg: hit(P * 1.1 - d) }),
+    burst: () => ({ dmg: hit(M * 0.7 - d / 2), all: true }),
+    freeze: () => ({ dmg: M * 0.8 }),
+    drain: () => ({ dmg: M * 0.8 }),
+    poison: () => ({ dmg: M * 0.4 + 3 * tick }),
+    multi: () => ({ dmg: 3 * hit(P * 0.5 - d) }),
     song: () => ({ util: '+3 ATK' }),
-    rampage: () => ({ dmg: hit(a + 1 - d), all: true }),
-    crit: () => ({ dmg: (a + 2) * 3 }),
-    guard: () => ({ util: '+6 DEF' }),
+    rampage: () => ({ dmg: hit(P * 0.7 - d), all: true }),
+    crit: () => ({ dmg: P * 1.4 }),
+    guard: () => ({ util: '+5 DEF' }),
     blind: () => ({ util: 'STUN' }),
-    curse: () => ({ dmg: 3 + m }),
-    venom: () => ({ dmg: 3 * (3 + Math.floor(m / 3)) }),
-    frost: () => ({ dmg: 4 + m * 0.9 }),
-    leech: () => ({ dmg: 5 + m }),
-    mend: () => ({ util: '+' + (30 + m) + ' HP' }),
+    curse: () => ({ dmg: M * 0.8 }),
+    venom: () => ({ dmg: 3 * tick }),
+    frost: () => ({ dmg: M * 0.8 }),
+    leech: () => ({ dmg: M * 0.9 }),
+    mend: () => ({ util: '+' + (25 + m) + ' HP' }),
     iron: () => ({ util: '+4 DEF' }),
-    fireball: () => ({ dmg: hit(6 + m * 1.1 - d / 2), all: true }),
-    lightning: () => ({ dmg: 10 + m * 1.4, all: true }),
+    fireball: () => ({ dmg: hit(M * 0.8 - d / 2), all: true }),
+    lightning: () => ({ dmg: M * 0.95, all: true }),
   };
   const r = (T[kind] || (() => ({ util: '' })))();
   if (r.dmg != null) r.dmg = Math.max(1, Math.round(r.dmg));
@@ -2327,6 +2370,8 @@ function pop(x, y, text, color) { FX.pops.push({ x, y, text, color, t0: performa
 function popHero(text, color) { pop(HERO_C.x, HERO_C.y - 26, text, color); }
 
 function hitEnemy(e, dmg, why = '') {
+  // Bosses take 25% less from mana moves, so one big special can't melt them.
+  if (e.boss && B && B.casting) dmg *= 0.75;
   dmg = Math.max(1, Math.round(dmg));
   e.hp -= dmg;
   e.flash = 12;
@@ -2348,7 +2393,7 @@ function killEnemy(e, how = 'kill') {
   if (!FL.tutorial) achieve('firstblood');
   if (e.traits.includes('explosive')) {
     const d = 8 + G.lvl;
-    G.hp -= d;
+    G.hp -= d; flashHp();
     const b = enemyBox(e);
     burst(b.cx, b.cy, 'boom', '#f5c542');
     popHero('-' + d, '#ff5fa2');
@@ -2435,59 +2480,66 @@ async function castMove(id, e) {
   const isClass = id === 'class';
   const def = isClass ? cls().skill : MOVES[id];
   G.mp -= def.mp;
+  B.casting = true;
+  try { await castMoveInner(id, e, s, isClass, def); } finally { B.casting = false; }
+}
+async function castMoveInner(id, e, s, isClass, def) {
   const eb = e && enemyBox(e);
   const bolt = async (color) => { if (e) { await fly(HERO_C, { x: eb.cx, y: eb.cy }, 'bolt', color, 320); burst(eb.cx, eb.cy, 'star', color); } };
   say(`You cast <b>${esc(def.name)}</b>!`);
   if (isClass) {
+    // Balanced power numbers shared with moveEstimate (see POW below): P is physical, M is magic.
     const a = () => heroAtk() + R.int(0, 2);
+    const M = () => magPow() + R.int(0, 2);
     const fist = async (color = '#c8334a') => { await fly(HERO_C, { x: eb.cx, y: eb.cy }, 'fist', color, 240); burst(eb.cx, eb.cy, 'boom', color); };
     const allBoom = async (color, proj = 'junk') => { const mid = { x: 160, y: 56 }; await fly(HERO_C, mid, proj, color, 360); burst(mid.x, mid.y, 'boom', color); };
     const healMe = (h) => { h = Math.round(h); G.hp = Math.min(s.maxHp, G.hp + h); burst(HERO_C.x, HERO_C.y, 'sparkle', '#6bbf59'); popHero('+' + h, '#6bbf59'); say(`<span class="good">+${h} HP</span>`); };
     switch (def.kind) {
-      case 'double': await fist(); hitEnemy(e, (a() + 1 - e.def) * 2); break;
-      case 'bolt': await bolt(def.color || '#c49af0'); hitEnemy(e, s.mag * 1.6 + R.int(0, 3)); break;
-      case 'flashy': burst(eb.cx, eb.cy, 'slash', '#f5c542'); await sleep(200); hitEnemy(e, (a() + 1 - e.def) * 1.3); addHype(2); break;
-      case 'shrapnel': await allBoom('#b8693a'); for (const x of alive()) hitEnemy(x, 5 + G.lvl + s.mag / 2 - x.def / 2); break;
+      case 'double': await fist(); hitEnemy(e, (a() + 1) * 1.5 - e.def); break;
+      case 'bolt': await bolt(def.color || '#c49af0'); hitEnemy(e, M() * 1.1); break;
+      case 'flashy': burst(eb.cx, eb.cy, 'slash', '#f5c542'); await sleep(200); hitEnemy(e, (a() + 1) * 1.3 - e.def); addHype(2); break;
+      case 'shrapnel': await allBoom('#b8693a'); for (const x of alive()) hitEnemy(x, ((a() + 1) * 0.35 + M() * 0.35) - x.def / 2); break;
       case 'talk': {
         const p = (e.boss ? 0 : 0.45) + s.luck * 0.02 + chaBonus() * 0.02 + (e.hp < e.maxHp * 0.4 ? 0.3 : 0);
         if (R.chance(p)) { say(`You talk ${esc(e.full)} into walking away.`); killEnemy(e, 'spare'); G.spared++; tag('merciful'); }
         else say(`${esc(e.full)} is not listening.`);
         break;
       }
-      case 'heal': healMe(20 + s.mag * 1.5); break;
-      case 'stun': await fist('#8b84a3'); hitEnemy(e, a() + 1 - e.def); if (e.alive) { e.frozen = 1; say(`${esc(e.full)} is stunned!`); } break;
+      case 'heal': healMe(15 + s.mag * 1.2); break;
+      case 'stun': await fist('#8b84a3'); hitEnemy(e, (a() + 1) * 0.9 - e.def); if (e.alive) { e.frozen = 1; say(`${esc(e.full)} is stunned!`); } break;
       case 'steal': {
-        burst(eb.cx, eb.cy, 'slash', '#6bbf59'); await sleep(200); hitEnemy(e, (a() + 1 - e.def) * 1.1);
-        const t = R.int(2, 4 + G.lvl); G.tokens += t; say(`You lift <b>${t}</b> tokens from its pockets.`);
+        burst(eb.cx, eb.cy, 'slash', '#6bbf59'); await sleep(200); hitEnemy(e, (a() + 1) * 1.1 - e.def);
+        const t = R.int(1, 2 + Math.floor(G.lvl / 2)); G.tokens += t; say(`You lift <b>${t}</b> tokens from its pockets.`);
         break;
       }
-      case 'burst': await allBoom(def.color || '#ff8a3a', 'bolt'); for (const x of alive()) hitEnemy(x, 4 + s.mag * 0.9 - x.def / 2); break;
-      case 'freeze': await bolt('#4fd8e8'); hitEnemy(e, 4 + s.mag * 0.9); if (e.alive) { e.frozen = 1; say(`${esc(e.full)} is frozen solid!`); } break;
-      case 'drain': { await bolt('#c8334a'); const d = Math.round(4 + s.mag * 1.1); hitEnemy(e, d); healMe(d); break; }
-      case 'poison': await bolt('#b8e05a'); hitEnemy(e, 2 + s.mag / 2); if (e.alive) { e.poison = 3; say(`${esc(e.full)} is poisoned!`); } break;
+      case 'burst': await allBoom(def.color || '#ff8a3a', 'bolt'); for (const x of alive()) hitEnemy(x, M() * 0.7 - x.def / 2); break;
+      case 'freeze': await bolt('#4fd8e8'); hitEnemy(e, M() * 0.8); if (e.alive) { e.frozen = 1; say(`${esc(e.full)} is frozen solid!`); } break;
+      case 'drain': { await bolt('#c8334a'); const d = Math.round(M() * 0.8); hitEnemy(e, d); healMe(d * 0.6); break; }
+      case 'poison': await bolt('#b8e05a'); hitEnemy(e, M() * 0.4); if (e.alive) { e.poison = 3; say(`${esc(e.full)} is poisoned!`); } break;
       case 'multi':
-        for (let i = 0; i < 3 && e.alive; i++) { burst(eb.cx + R.int(-6, 6), eb.cy + R.int(-6, 6), 'star', '#f5c542'); await sleep(140); hitEnemy(e, (a() + 1) * 0.6 - e.def); }
+        for (let i = 0; i < 3 && e.alive; i++) { burst(eb.cx + R.int(-6, 6), eb.cy + R.int(-6, 6), 'star', '#f5c542'); await sleep(140); hitEnemy(e, (a() + 1) * 0.5 - e.def); }
         break;
       case 'song': burst(HERO_C.x, HERO_C.y, 'sparkle', '#ff5fa2'); B.buff.atk = (B.buff.atk || 0) + 3; addHype(1); say('The crowd sings along. +3 attack for this fight.'); break;
-      case 'rampage': for (const x of alive()) { const b = enemyBox(x); burst(b.cx, b.cy, 'slash', '#ff8a8a'); } await sleep(220); for (const x of alive()) hitEnemy(x, a() + 1 - x.def); break;
-      case 'crit': await bolt('#4fd8e8'); hitEnemy(e, (a() + 2) * 3, 'HEADSHOT! '); break;
-      case 'guard': burst(HERO_C.x, HERO_C.y, 'shield', '#8b84a3'); B.buff.def = (B.buff.def || 0) + 6; say('You plant your feet. +6 defense.'); healMe(10); break;
+      case 'rampage': for (const x of alive()) { const b = enemyBox(x); burst(b.cx, b.cy, 'slash', '#ff8a8a'); } await sleep(220); for (const x of alive()) hitEnemy(x, (a() + 1) * 0.7 - x.def); break;
+      case 'crit': await bolt('#4fd8e8'); hitEnemy(e, (a() + 1) * 1.4, 'CRITICAL! '); break;
+      case 'guard': burst(HERO_C.x, HERO_C.y, 'shield', '#8b84a3'); B.buff.def = (B.buff.def || 0) + 5; say('You plant your feet. +5 defense.'); healMe(8); break;
       case 'blind':
         for (const x of alive()) { const b = enemyBox(x); burst(b.cx, b.cy, 'star', '#e8dcc0'); }
         await sleep(220);
         for (const x of alive()) { if (R.chance(0.6)) { x.frozen = 1; say(`${esc(x.full)} can't see!`); } else say(`${esc(x.full)} blinks it off.`); }
         break;
-      case 'curse': await bolt('#8a4fc9'); hitEnemy(e, 3 + s.mag); if (e.alive) { e.atk = Math.max(1, e.atk - 3); say(`${esc(e.full)} feels weaker. Its hits do 3 less.`); } break;
+      case 'curse': await bolt('#8a4fc9'); hitEnemy(e, M() * 0.8); if (e.alive) { e.atk = Math.max(1, e.atk - 3); say(`${esc(e.full)} feels weaker. Its hits do 3 less.`); } break;
     }
     return;
   }
   if (id === 'venom') { await bolt('#b8e05a'); e.poison = 3; say(`${esc(e.full)} is poisoned!`); }
-  if (id === 'frost') { await bolt('#4fd8e8'); hitEnemy(e, 4 + s.mag * 0.9); if (e.alive) { e.frozen = 1; say(`${esc(e.full)} is frozen solid!`); } }
-  if (id === 'leech') { await bolt('#c8334a'); const d = 5 + s.mag; hitEnemy(e, d); const h = Math.round(d / 2); G.hp = Math.min(s.maxHp, G.hp + h); popHero('+' + h, '#6bbf59'); }
-  if (id === 'mend') { burst(HERO_C.x, HERO_C.y, 'sparkle', '#6bbf59'); const h = 30 + s.mag; G.hp = Math.min(s.maxHp, G.hp + h); popHero('+' + h, '#6bbf59'); say(`<span class="good">+${h} HP</span>`); }
+  const M = () => magPow() + R.int(0, 2);
+  if (id === 'frost') { await bolt('#4fd8e8'); hitEnemy(e, M() * 0.8); if (e.alive) { e.frozen = 1; say(`${esc(e.full)} is frozen solid!`); } }
+  if (id === 'leech') { await bolt('#c8334a'); const d = Math.round(M() * 0.9); hitEnemy(e, d); const h = Math.round(d / 2); G.hp = Math.min(s.maxHp, G.hp + h); popHero('+' + h, '#6bbf59'); }
+  if (id === 'mend') { burst(HERO_C.x, HERO_C.y, 'sparkle', '#6bbf59'); const h = 25 + s.mag; G.hp = Math.min(s.maxHp, G.hp + h); popHero('+' + h, '#6bbf59'); say(`<span class="good">+${h} HP</span>`); }
   if (id === 'iron') { burst(HERO_C.x, HERO_C.y, 'shield', '#8b84a3'); B.buff.def = (B.buff.def || 0) + 4; say('Your skin turns to iron. +4 defense.'); }
-  if (id === 'fireball') { const mid = { x: 160, y: 56 }; await fly(HERO_C, mid, 'bolt', '#ff8a3a', 380); burst(mid.x, mid.y, 'boom', '#ff8a3a'); for (const x of alive()) hitEnemy(x, 6 + s.mag * 1.1 - x.def / 2); }
-  if (id === 'lightning') { for (const x of alive()) { const b = enemyBox(x); burst(b.cx, b.cy, 'zap', '#f5c542'); } await sleep(250); for (const x of alive()) hitEnemy(x, 10 + s.mag * 1.4); }
+  if (id === 'fireball') { const mid = { x: 160, y: 56 }; await fly(HERO_C, mid, 'bolt', '#ff8a3a', 380); burst(mid.x, mid.y, 'boom', '#ff8a3a'); for (const x of alive()) hitEnemy(x, M() * 0.8 - x.def / 2); }
+  if (id === 'lightning') { for (const x of alive()) { const b = enemyBox(x); burst(b.cx, b.cy, 'zap', '#f5c542'); } await sleep(250); for (const x of alive()) hitEnemy(x, M() * 0.95); }
 }
 
 async function enemyTurn() {
@@ -2504,8 +2556,8 @@ async function enemyTurn() {
     }
     if (G.hp <= 0) break;
   }
-  if (B.poison > 0 && G.hp > 0) { G.hp -= 2; B.poison--; popHero('-2', '#b8e05a'); say('Poison stings. <b>2</b> damage.'); }
-  for (const e of alive()) if (e.poison > 0 && G.hp > 0) { e.poison--; hitEnemy(e, 3 + Math.floor(stats().mag / 3), 'Venom! '); }
+  if (B.poison > 0 && G.hp > 0) { G.hp -= 2; B.poison--; flashHp(); popHero('-2', '#b8e05a'); say('Poison stings. <b>2</b> damage.'); }
+  for (const e of alive()) if (e.poison > 0 && G.hp > 0) { e.poison--; hitEnemy(e, 2 + Math.floor(stats().mag / 4), 'Venom! '); }
   for (const e of alive()) rollIntent(e);
   updateHud();
   if (checkEnd()) return;
@@ -2623,11 +2675,13 @@ function victory() {
     if (e.spared) { xp += Math.floor(e.xp / 2); continue; }
     xp += e.xp;
     tokens += R.int(e.tokens[0], e.tokens[1]) + 1;
-    // Every mob drops something. Extra rolls for a bonus item and a loot box.
+    // Drops (tightened after playtesting: too many potions, food and bombs piled up by the end of floor 1).
     const scav = hasPerk('scavenger') ? 0.15 : 0;
-    if (e.drops.length) drops.push(R.pick(e.drops));
-    if (R.chance(0.4 + scav)) { const bonus = rollLoot(G.lvl >= 5 ? 'box_silver' : 'box_rusty').items[0]; if (bonus) for (let n = 0; n < bonus[1]; n++) drops.push(bonus[0]); }
-    if (R.chance(0.3 + scav)) drops.push(G.lvl >= 6 && R.chance(0.3) ? 'box_silver' : 'box_rusty');
+    if (e.drops.length && R.chance(0.6 + scav)) drops.push(R.pick(e.drops));
+    if (R.chance(0.08 + scav)) { const bonus = rollLoot(G.lvl >= 5 ? 'box_silver' : 'box_rusty').items[0]; if (bonus) for (let n = 0; n < bonus[1]; n++) drops.push(bonus[0]); }
+    if (R.chance(0.05 + scav / 2)) drops.push(G.lvl >= 6 && R.chance(0.3) ? 'box_silver' : 'box_rusty');
+    // Crafting materials drop more often now that boxes are rarer.
+    if (R.chance(0.55 + scav)) drops.push(R.pick(['j_wire', 'j_token', 'j_feather', 'j_jelly', 'j_tail', 'j_scrap']));
     if (e.elite) { drops.push(G.lvl >= 5 ? 'box_gold' : 'box_silver', rollLoot(G.lvl >= 5 ? 'box_gold' : 'box_silver').items[0][0]); achieve('elite'); tag('brave'); }
   }
   const boss = B.enemies.find((e) => e.boss);
@@ -2674,10 +2728,12 @@ function victory() {
   renderBattleControls();
 }
 
+// XP needed for the next level. Steeper than before (was level x 20): playtesters hit level 11 on floor 1.
+function xpNeed(lvl) { return Math.round(20 * Math.pow(lvl, 1.4)); }
 function gainXp(n) {
   G.xp += n;
-  while (G.xp >= G.lvl * 20) {
-    G.xp -= G.lvl * 20;
+  while (G.xp >= xpNeed(G.lvl)) {
+    G.xp -= xpNeed(G.lvl);
     G.lvl++;
     const s = stats();
     G.hp = Math.min(s.maxHp, G.hp + 10);
@@ -2699,7 +2755,7 @@ function endBattleReturn() {
 
 // ---------- Death and floor clear ----------
 function die(reason) {
-  mode = 'title';
+  mode = 'title'; lowHpPulse();
   B = null; prompt = null;
   controls.innerHTML = '';
   showOverlay(`
@@ -2721,7 +2777,7 @@ overlayHandlers.reload = () => {
 };
 
 function showFloorClear() {
-  mode = 'title';
+  mode = 'title'; lowHpPulse();
   B = null; prompt = null;
   controls.innerHTML = '';
   const mood = docMood();
@@ -2824,7 +2880,7 @@ function drawMap() {
     const ddx = m.x * 16 - m.px, ddy = m.y * 16 - m.py;
     if (ddx) { m.faceLeft = ddx < 0; m.px += Math.sign(ddx) * Math.min(Math.abs(ddx), glide); }
     if (ddy) m.py += Math.sign(ddy) * Math.min(Math.abs(ddy), glide);
-    if (!onScreen(m) || (!seen(m.x, m.y) && !(G.radar > 0))) continue;
+    if (!onScreen(m) || (!seen(m.x, m.y) && !(G.radar > 0) && !(spotted && spotted.m === m))) continue;
     actors.push({ y: m.py, fn: () => {
       const lead = m.members[0];
       const moving = ddx || ddy;
@@ -2982,17 +3038,7 @@ function loop(now) {
   if (mode === 'map' && G && FL) {
     if (canAct()) {
       G.playTime += dt;
-      // Out-of-combat healing (slowed down at the owner's request): waits 10 seconds after a fight, eases in,
-      // then heals about 1 HP every 4 seconds (0.25% of max HP a second once your max HP passes 100).
-      calmT += dt;
-      if (calmT > 10 && G.hp > 0) {
-        const max = stats().maxHp;
-        if (G.hp < max) {
-          const ease = Math.min(1, 0.5 + (calmT - 10) / 10);
-          regenAcc += dt * 0.25 * Math.max(1, max / 100) * ease;
-          if (regenAcc >= 1) { const h = Math.floor(regenAcc); regenAcc -= h; G.hp = Math.min(max, G.hp + h); }
-        } else regenAcc = 0;
-      }
+      // No auto heal (owner's call). Heal with potions, food, skills or Doc in the safe room.
       if (G.guide > 0) {
         G.guide -= dt;
         if (G.guide <= 0) { G.guide = 0; guidePath = null; say('Your Boss Compass wore off.'); updateHud(); }
@@ -3004,7 +3050,7 @@ function loop(now) {
       }
       if (!FL.tutorial) {
         G.respawnT += dt;
-        if (G.respawnT >= 90) { G.respawnT = 0; respawnMobs(); }
+        if (G.respawnT >= 60) { G.respawnT = 0; respawnMobs(); }
       }
       hudTick += dt;
       if (hudTick > 0.5) { hudTick = 0; updateHud(); }

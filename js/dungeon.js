@@ -157,7 +157,7 @@ export function generateFloor(seed, floor, opts = {}) {
   const chests = [];
   let ci = 0;
   for (const r of fightRooms) {
-    if (!rng.chance(0.55)) continue;
+    if (!rng.chance(0.35)) continue;
     const p = freeSpot(r);
     if (!p) continue;
     const depth = depthOf(r);
@@ -175,12 +175,15 @@ export function generateFloor(seed, floor, opts = {}) {
 
   // Mob groups: more traits, bigger groups and more elites in later stages.
   let mi = 0;
+  // Every fight room has mobs, and some get a second group (more mobs, fewer boxes after playtesting).
   for (const r of fightRooms) {
-    if (r !== bossRoom && r !== boss2Room && !rng.chance(0.8)) continue;
-    const p = freeSpot(r);
-    if (!p) continue;
-    const depth = depthOf(r);
-    mobs.push({ id: 'm' + mi++, x: p.x, y: p.y, depth, ...makeGroup(rng, types, traitIds, depth, rng.chance(0.03 + depth * 0.07)) });
+    const groups = 1 + (rng.chance(0.35) ? 1 : 0);
+    for (let gi = 0; gi < groups; gi++) {
+      const p = freeSpot(r);
+      if (!p) continue;
+      const depth = depthOf(r);
+      mobs.push({ id: 'm' + mi++, x: p.x, y: p.y, depth, ...makeGroup(rng, types, traitIds, depth, rng.chance(0.03 + depth * 0.07)) });
+    }
   }
 
   const decor = new Uint8Array(W * H);
