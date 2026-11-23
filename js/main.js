@@ -1088,7 +1088,7 @@ function renderShop(extra = '', keepScroll = true) {
     const jv = junk.reduce((a, id) => a + sellableCount(id) * sellPrice(id), 0);
     const boundIds = G.order.filter((id) => boundCount(id) > 0 && !ITEMS[id].nosell);
     body = `${junk.length ? `<button class="btn gold" data-act="selljunk">SELL ALL JUNK: ${junk.reduce((a, id) => a + sellableCount(id), 0)} ITEMS FOR ${jv} TOKENS</button>` : ''}
-      ${boundIds.length ? `<p class="muted" style="font-size:14px"><b style="color:var(--pink)">Penny won't buy back what came out of her own boxes.</b> You have ${boundIds.reduce((a, id) => a + boundCount(id), 0)} shop-box items. Use them, craft with them, or break gear down into Scrap at the bench.</p>` : ''}
+      ${boundIds.length ? `<p class="muted" style="font-size:14px"><b style="color:var(--pink)">Penny won't buy back what came out of her own boxes.</b> You have ${boundIds.reduce((a, id) => a + boundCount(id), 0)} shop-box items. Use them, craft with them, break gear down into Scrap at the bench, or shred useless scrolls into Scrap from your bag.</p>` : ''}
       <p class="muted" style="font-size:14px">Junk is any gear weaker than what you wear in that slot, spare copies of gear you already wear, and scrolls for moves you know. Crafting materials are never sold as junk.</p>
       <p class="muted" style="font-size:14px">Gear you are wearing is not listed. Junk is also used for crafting at the bench.</p>
       <div class="items">${ids.map((id) => {
@@ -1318,7 +1318,7 @@ const TUT_LINES = {
   gotbox: 'Loot boxes can only be opened in a safe room. Keep heading right.',
   mob: 'That Training Rat is a mob. Walk into it to fight. Mobs throw things at you, so watch the screen.',
   battle: 'Your buttons say exactly what you will do. Tap SWING or PUNCH to attack. Hurt mobs may beg: sparing or finishing them changes how people treat you.',
-  safe: 'A safe room! Mobs cannot come in and your game saves here. Open your Bag: tap Open all for your boxes, then Learn the scroll. Tap Gear to wear what you find. The striped cart is Penny\'s shop, and the bench is for crafting.',
+  safe: 'A safe room! Mobs cannot come in and your game saves here. Open your Bag: tap Open all for your boxes, then Learn the scroll. Tap Gear to wear what you find. The striped cart is Penny\'s shop, the bench is for crafting, and the bed heals you for free.',
   stairs: 'Real floors are huge and have two bosses. Beat both to unlock the stairs. This exit is free. Walk onto it when you are ready!',
 };
 function tut(step) {
@@ -1597,6 +1597,7 @@ function indexObjects() {
   for (const b of FL.booths) objIndex.set(key(b), 'booth');
   for (const b of FL.benches) objIndex.set(key(b), 'bench');
   for (const b of FL.shops || []) objIndex.set(key(b), 'shop');
+  for (const b of FL.beds || []) objIndex.set(key(b), 'bed');
   for (const b of FL.bosses) if (!G.bossesDead.includes(b.id)) objIndex.set(key(b), b);
   for (const c of FL.chests) if (!G.opened.includes(c.id)) objIndex.set(key(c), c);
   for (const g of FL.gates || []) if (!G.killed.includes(g.keeper)) objIndex.set(key(g), g);
@@ -1722,11 +1723,21 @@ function interactAdjacent() {
   bookie(R.pick(['Nothing here but dust and despair.', 'You poke the air. Riveting.', 'Try walking into things. That is how this show works.']));
 }
 
+// Safe room bed: a free full restore of HP and MP.
+function sleepInBed() {
+  const s = stats();
+  if (G.hp >= s.maxHp && G.mp >= s.maxMp) return say('You lie down for a second. You are not tired. HP and MP are already full.');
+  G.hp = s.maxHp; G.mp = s.maxMp;
+  say('<span class="good">You nap in the safe room bed. HP and MP fully restored!</span>');
+  bookie(R.pick(['A nap on live TV. The Patrons are paying to watch you snore.', 'Rise and shine, crawler. The mobs did not nap.']));
+  updateHud(); save();
+}
 function interact(obj) {
   if (obj === 'doc') return talkDoc();
   if (obj === 'booth') return boothMenu(lastObjAt, true);
   if (obj === 'bench') return openBench();
   if (obj === 'shop') return openShop();
+  if (obj === 'bed') return sleepInBed();
   if (obj.type && BOSSES[obj.type]) {
     const d = BOSSES[obj.type];
     return ask(`${d.name} blocks your way. ${d.intro}`, [
@@ -1897,6 +1908,8 @@ function itemAction(id) {
   const safe = inSafe();
   if (it.type === 'box') return safe ? ['Open', true] : ['Open', false, 'Safe room only'];
   if (it.type === 'scroll') {
+    // Useless scrolls that came out of shop boxes can't be sold, so they can be shredded into Scrap instead.
+    if (knownScroll(id) && boundCount(id) > 0) return ['Shred', true, `${boundCount(id) > 1 ? boundCount(id) + ' are' : 'It is'} from a shop box, so Penny won't buy ${boundCount(id) > 1 ? 'them' : 'it'}. Shred for 1 Scrap each.`];
     if (G.moves.includes(it.teaches)) return [null, false, 'Already known. Sell it to Penny as junk.'];
     if (!canLearn(id)) return [null, false, `${cls().name}s can't learn ${SCHOOL_NAMES[MOVES[it.teaches].school]} spells. Sell it.`];
     return safe ? ['Learn', true] : ['Learn', false, 'Safe room only'];
@@ -1921,7 +1934,7 @@ function renderBag(extra = '') {
     lastGroup = grp;
     const eq = isEquipped(id);
     const side = it.type === 'potion' && G.sideFx[id] !== undefined ? ' Side effect: ' + SIDE_EFFECTS[G.sideFx[id]].text : '';
-    const bnd = boundCount(id) && !it.nosell ? ` ${boundCount(id)} from shop boxes: can't be sold.` : '';
+    const bnd = boundCount(id) && !it.nosell && !knownScroll(id) ? ` ${boundCount(id)} from shop boxes: can't be sold.` : '';
     return `${head}<div class="item"><img src="${icon(id)}" alt="">
       <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))} x${count(id)} ${eq ? '<span class="equipped">EQUIPPED</span>' : ''}${badgeHtml(id)}</span><span class="ds">${isGear(id) ? gearDescHtml(id) : esc(it.desc + side + bnd)}${note ? ` <b style="color:var(--pink)" ${note.startsWith('Ready in') ? `data-potion-timer="${id}"` : ''}>${esc(note)}</b>` : ''}</span></div>
       <button class="star ${G.favs[id] ? 'on' : ''}" data-act="fav" data-id="${id}" aria-label="Favorite">★</button>
@@ -1953,6 +1966,14 @@ Object.assign(overlayHandlers, {
 function useItemFromBag(id) {
   const it = ITEMS[id];
   if (it.type === 'box') return openBox(id);
+  if (it.type === 'scroll' && knownScroll(id) && boundCount(id) > 0) {
+    const n = boundCount(id);
+    removeItem(id, n);
+    addItem('j_scrap', n, true);
+    say(`You shred ${n > 1 ? n + ' scrolls' : 'the scroll'} into <span class="loot">${n} Scrap</span>.`);
+    saveSoon();
+    return renderBag();
+  }
   if (it.type === 'scroll') return learnScroll(id);
   if (potionWait(id)) return renderBag();
   if (isGear(id)) {
@@ -2917,6 +2938,14 @@ function drawMap() {
   }
   for (const b of FL.booths) if (onScreen(b) && seen(b.x, b.y)) draw(sprite('bookie'), b.x * 16, b.y * 16, bob);
   for (const b of FL.shops || []) if (onScreen(b) && seen(b.x, b.y)) draw(sprite('shop'), b.x * 16, b.y * 16, 0);
+  for (const b of FL.beds || []) if (onScreen(b) && seen(b.x, b.y)) {
+    const bx = b.x * 16 - camX, by = b.y * 16 - camY;
+    ctx.fillStyle = '#1a1426'; ctx.fillRect(bx + 1, by + 2, 14, 13);
+    ctx.fillStyle = '#5b3a29'; ctx.fillRect(bx + 2, by + 3, 12, 11);
+    ctx.fillStyle = '#fff6e0'; ctx.fillRect(bx + 3, by + 4, 10, 3);
+    ctx.fillStyle = '#3a6ea5'; ctx.fillRect(bx + 3, by + 8, 10, 5);
+    ctx.fillStyle = '#6aa0d8'; ctx.fillRect(bx + 3, by + 8, 10, 1);
+  }
   if (onScreen(FL.doc) && seen(FL.doc.x, FL.doc.y)) draw(docSprite(), FL.doc.x * 16, FL.doc.y * 16);
   for (const g of FL.gates || []) if (onScreen(g) && seen(g.x, g.y) && !G.killed.includes(g.keeper)) {
     const gx = g.x * 16 - camX, gy = g.y * 16 - camY;
