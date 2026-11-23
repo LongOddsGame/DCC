@@ -1088,7 +1088,7 @@ function renderShop(extra = '', keepScroll = true) {
     const jv = junk.reduce((a, id) => a + sellableCount(id) * sellPrice(id), 0);
     const boundIds = G.order.filter((id) => boundCount(id) > 0 && !ITEMS[id].nosell);
     body = `${junk.length ? `<button class="btn gold" data-act="selljunk">SELL ALL JUNK: ${junk.reduce((a, id) => a + sellableCount(id), 0)} ITEMS FOR ${jv} TOKENS</button>` : ''}
-      ${boundIds.length ? `<p class="muted" style="font-size:14px"><b style="color:var(--pink)">Penny won't buy back what came out of her own boxes.</b> You have ${boundIds.reduce((a, id) => a + boundCount(id), 0)} shop-box items. Use them, craft with them, or break gear down into Scrap at the bench.</p>` : ''}
+      ${boundIds.length ? `<p class="muted" style="font-size:14px"><b style="color:var(--pink)">Penny won't buy back what came out of her own boxes.</b> You have ${boundIds.reduce((a, id) => a + boundCount(id), 0)} shop-box items. Use them, craft with them, break gear down into Scrap at the bench, or shred useless scrolls into Scrap from your bag.</p>` : ''}
       <p class="muted" style="font-size:14px">Junk is any gear weaker than what you wear in that slot, spare copies of gear you already wear, and scrolls for moves you know. Crafting materials are never sold as junk.</p>
       <p class="muted" style="font-size:14px">Gear you are wearing is not listed. Junk is also used for crafting at the bench.</p>
       <div class="items">${ids.map((id) => {
@@ -1897,6 +1897,8 @@ function itemAction(id) {
   const safe = inSafe();
   if (it.type === 'box') return safe ? ['Open', true] : ['Open', false, 'Safe room only'];
   if (it.type === 'scroll') {
+    // Useless scrolls that came out of shop boxes can't be sold, so they can be shredded into Scrap instead.
+    if (knownScroll(id) && boundCount(id) > 0) return ['Shred', true, `${boundCount(id) > 1 ? boundCount(id) + ' are' : 'It is'} from a shop box, so Penny won't buy ${boundCount(id) > 1 ? 'them' : 'it'}. Shred for 1 Scrap each.`];
     if (G.moves.includes(it.teaches)) return [null, false, 'Already known. Sell it to Penny as junk.'];
     if (!canLearn(id)) return [null, false, `${cls().name}s can't learn ${SCHOOL_NAMES[MOVES[it.teaches].school]} spells. Sell it.`];
     return safe ? ['Learn', true] : ['Learn', false, 'Safe room only'];
@@ -1921,7 +1923,7 @@ function renderBag(extra = '') {
     lastGroup = grp;
     const eq = isEquipped(id);
     const side = it.type === 'potion' && G.sideFx[id] !== undefined ? ' Side effect: ' + SIDE_EFFECTS[G.sideFx[id]].text : '';
-    const bnd = boundCount(id) && !it.nosell ? ` ${boundCount(id)} from shop boxes: can't be sold.` : '';
+    const bnd = boundCount(id) && !it.nosell && !knownScroll(id) ? ` ${boundCount(id)} from shop boxes: can't be sold.` : '';
     return `${head}<div class="item"><img src="${icon(id)}" alt="">
       <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))} x${count(id)} ${eq ? '<span class="equipped">EQUIPPED</span>' : ''}${badgeHtml(id)}</span><span class="ds">${isGear(id) ? gearDescHtml(id) : esc(it.desc + side + bnd)}${note ? ` <b style="color:var(--pink)" ${note.startsWith('Ready in') ? `data-potion-timer="${id}"` : ''}>${esc(note)}</b>` : ''}</span></div>
       <button class="star ${G.favs[id] ? 'on' : ''}" data-act="fav" data-id="${id}" aria-label="Favorite">★</button>
@@ -1953,6 +1955,14 @@ Object.assign(overlayHandlers, {
 function useItemFromBag(id) {
   const it = ITEMS[id];
   if (it.type === 'box') return openBox(id);
+  if (it.type === 'scroll' && knownScroll(id) && boundCount(id) > 0) {
+    const n = boundCount(id);
+    removeItem(id, n);
+    addItem('j_scrap', n, true);
+    say(`You shred ${n > 1 ? n + ' scrolls' : 'the scroll'} into <span class="loot">${n} Scrap</span>.`);
+    saveSoon();
+    return renderBag();
+  }
   if (it.type === 'scroll') return learnScroll(id);
   if (potionWait(id)) return renderBag();
   if (isGear(id)) {
