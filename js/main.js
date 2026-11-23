@@ -2907,14 +2907,14 @@ function loop(now) {
   if (mode === 'map' && G && FL) {
     if (canAct()) {
       G.playTime += dt;
-      // Out-of-combat healing, like most action RPGs: waits 5 seconds after a fight, eases in, then heals
-      // about 1 HP a second (1% of max HP a second once your max HP passes 100).
+      // Out-of-combat healing (slowed down at the owner's request): waits 10 seconds after a fight, eases in,
+      // then heals about 1 HP every 4 seconds (0.25% of max HP a second once your max HP passes 100).
       calmT += dt;
-      if (calmT > 5 && G.hp > 0) {
+      if (calmT > 10 && G.hp > 0) {
         const max = stats().maxHp;
         if (G.hp < max) {
-          const ease = Math.min(1, 0.5 + (calmT - 5) / 10);
-          regenAcc += dt * Math.max(1, max / 100) * ease;
+          const ease = Math.min(1, 0.5 + (calmT - 10) / 10);
+          regenAcc += dt * 0.25 * Math.max(1, max / 100) * ease;
           if (regenAcc >= 1) { const h = Math.floor(regenAcc); regenAcc -= h; G.hp = Math.min(max, G.hp + h); }
         } else regenAcc = 0;
       }
