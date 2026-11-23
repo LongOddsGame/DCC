@@ -115,11 +115,13 @@ export function generateFloor(seed, floor, opts = {}) {
     { id: 'b2', type: 'hoarder', x: boss2Room.cx, y: boss2Room.cy },
   ];
 
-  // Safe rooms: one at the start of every stage, so each new stage begins with a rest stop.
+  // Safe rooms: two per stage (owner request). One near the start of the stage, and one deeper in.
   const safeRooms = [];
   for (const st of stages) {
     const near = st.rooms.filter((r) => r !== st.entry && r !== st.exit && r !== bossRoom && r !== boss2Room).sort((a, b) => rd(a) - rd(b));
     if (near[0]) safeRooms.push(near[0]);
+    // The second goes about two thirds of the way through the stage, if the stage has room to spare.
+    if (near.length >= 4) safeRooms.push(near[Math.max(2, Math.floor(near.length * 0.66))]);
   }
   for (const sr of safeRooms) for (let yy = sr.y; yy < sr.y + sr.h; yy++) for (let xx = sr.x; xx < sr.x + sr.w; xx++) set(xx, yy, T.SAFE);
   const safeRoom = safeRooms[0];

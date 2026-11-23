@@ -263,6 +263,7 @@ function loadSlot(i) {
   if (!G.perks) G.perks = LEGACY_PERK[G.job] ? [LEGACY_PERK[G.job]] : [];
   G.radar = G.radar || 0;
   G.guide = G.guide || 0; guidePath = null;
+  G.safeGuide = G.safeGuide || 0; safePath = null;
   G.respawnT = G.respawnT || 0;
   G.spawnCount = G.spawnCount || 0;
   G.tutSeen = G.tutSeen || {};
@@ -314,6 +315,7 @@ function updateHud() {
   const tEl = $('hud-timer');
   if (G.radar > 0) { tEl.textContent = 'RADAR ' + Math.ceil(G.radar) + 's'; tEl.classList.toggle('warn', G.radar <= 10); }
   else if (G.guide > 0) { tEl.textContent = 'COMPASS ' + Math.ceil(G.guide) + 's'; tEl.classList.toggle('warn', G.guide <= 10); }
+  else if (G.safeGuide > 0) { tEl.textContent = 'SAFE ROOM ' + Math.ceil(G.safeGuide) + 's'; tEl.classList.toggle('warn', G.safeGuide <= 10); }
   else { tEl.textContent = FL && !FL.tutorial ? (FL.stages && stageAt(FL, G.pos.x) < FL.stages.length - 1 ? 'STAGE ' + (stageAt(FL, G.pos.x) + 1) + '/' + FL.stages.length : 'BOSS ' + G.bossesDead.length + '/2') : ''; tEl.classList.remove('warn'); }
   $('hud-odds').textContent = Math.max(1, Math.round(G.odds)) + ' TO 1';
   $('hp-fill').style.width = clamp((G.hp / s.maxHp) * 100, 0, 100) + '%';
@@ -1837,6 +1839,7 @@ function openFullMap() {
   for (const r of FL.safeRooms) if (!seen(r.cx, r.cy)) g.fillRect(r.x, r.y, r.w, r.h);
   for (const b of FL.bosses) if (!G.bossesDead.includes(b.id) && seen(b.x, b.y)) { g.fillStyle = '#c8334a'; g.fillRect(b.x - 2, b.y - 2, 5, 5); }
   if (G.radar > 0) { g.fillStyle = '#ff5fa2'; for (const m of mobsLive) g.fillRect(m.x - 1, m.y - 1, 3, 3); }
+  if (safePath) { g.fillStyle = '#fff6e0'; for (const i of safePath) g.fillRect(i % FL.w, (i / FL.w) | 0, 1, 1); }
   if (guidePath) {
     g.fillStyle = '#b8e05a';
     for (const i of guidePath) g.fillRect(i % FL.w, (i / FL.w) | 0, 1, 1);
@@ -1865,7 +1868,7 @@ function openFullMap() {
     <img src="${zc.toDataURL()}" alt="Map of this stage" style="width:100%; image-rendering:pixelated; border:3px solid var(--edge)">
     <p class="muted" style="font-size:15px">Whole floor${st ? ': 4 stages, left to right' : ''}</p>
     <img src="${big.toDataURL()}" alt="Whole floor map" style="width:100%; image-rendering:pixelated; border:3px solid var(--edge)">
-    <p style="font-size:15px"><span style="color:#4fd8e8">■</span> You · <span style="color:#b8693a">■</span> Safe rooms (${found} of ${FL.safeRooms.length} visited) · <span style="color:#c8334a">■</span> Bosses you found · <span style="color:#f5c542">■</span> Stairs${FL.gates ? ' · <span style="color:#c8334a">|</span> Locked gates' : ''}${G.radar > 0 ? ' · <span style="color:#ff5fa2">■</span> Mobs (radar)' : ''}${guidePath ? ' · <span style="color:#b8e05a">■</span> Way to the boss' : ''}</p>
+    <p style="font-size:15px"><span style="color:#4fd8e8">■</span> You · <span style="color:#b8693a">■</span> Safe rooms (${found} of ${FL.safeRooms.length} visited) · <span style="color:#c8334a">■</span> Bosses you found · <span style="color:#f5c542">■</span> Stairs${FL.gates ? ' · <span style="color:#c8334a">|</span> Locked gates' : ''}${G.radar > 0 ? ' · <span style="color:#ff5fa2">■</span> Mobs (radar)' : ''}${guidePath ? ' · <span style="color:#b8e05a">■</span> Way to the boss' : ''}${safePath ? ' · <span style="color:#fff6e0">■</span> Way to a safe room' : ''}</p>
     <button class="btn grey" data-act="closebag" style="position:sticky; bottom:0">CLOSE</button>`);
 }
 
@@ -1899,6 +1902,40 @@ function findBossPath() {
     }
   }
   return null;
+}
+// Safe Room Compass: a trail to the nearest safe room you haven't been in (or the nearest one if you've seen them all).
+let safePath = null, safeFrom = -1, safeT = 0;
+function findSafePath() {
+  const W = FL.w, N = W * FL.h;
+  const unseen = FL.safeRooms.filter((r) => !seen(r.cx, r.cy) && !(G.pos.x >= r.x && G.pos.x < r.x + r.w && G.pos.y >= r.y && G.pos.y < r.y + r.h));
+  const rooms = unseen.length ? unseen : FL.safeRooms;
+  const goal = new Set();
+  for (const r of rooms) for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) goal.add(y * W + x);
+  const start = G.pos.y * W + G.pos.x;
+  if (goal.has(start)) return [];
+  const prev = new Int32Array(N).fill(-1), q = new Int32Array(N);
+  let h = 0, t = 0;
+  q[t++] = start; prev[start] = start;
+  while (h < t) {
+    const c = q[h++];
+    if (goal.has(c)) { const path = []; for (let p = c; p !== start; p = prev[p]) path.push(p); return path; }
+    const x = c % W;
+    for (const n of [c - 1, c + 1, c - W, c + W]) {
+      if (n < 0 || n >= N || prev[n] !== -1) continue;
+      if ((n === c - 1 && x === 0) || (n === c + 1 && x === W - 1)) continue;
+      if (FL.tiles[n] === T.WALL) continue;
+      prev[n] = c; q[t++] = n;
+    }
+  }
+  return null;
+}
+function updateSafeGuide(force = false) {
+  if (!(G.safeGuide > 0) || FL.tutorial) { safePath = null; return; }
+  const here = G.pos.y * FL.w + G.pos.x;
+  safeT -= 1 / 60;
+  if (!force && (here === safeFrom || safeT > 0)) return;
+  safeT = 0.5; safeFrom = here;
+  safePath = findSafePath();
 }
 // Recomputes the trail when you move (at most twice a second).
 function updateGuide(force = false) {
@@ -2084,6 +2121,14 @@ function consume(id) {
       say(`<span class="good">Boss Compass on!</span> A green trail on your map leads to ${b ? esc(BOSSES[b.type].name) + ', ' + whereIs(b) : 'the nearest boss'}. Lasts ${Math.round(G.guide)} seconds of play.`);
     }
   }
+  if (it.safeGuide) {
+    if (FL.tutorial) say('The potion fizzes. The safe room is right over there.');
+    else {
+      G.safeGuide = (G.safeGuide > 0 ? G.safeGuide : 0) + it.safeGuide;
+      updateSafeGuide(true);
+      say(`<span class="good">Safe Room Compass on!</span> A white trail on your maps leads to the nearest safe room you haven't visited. Lasts ${Math.round(G.safeGuide)} seconds of play.`);
+    }
+  }
   if (it.radar) {
     G.radar = (G.radar > 0 ? G.radar : 0) + it.radar * (hasPerk('nerd') ? 2 : 1);
     say(`<span class="good">Mob Radar on!</span> Every mob shows on your map for ${Math.round(G.radar)} seconds. Pausing stops the clock.`);
@@ -2107,11 +2152,11 @@ function consume(id) {
 // Only the pause menu (or leaving the app) stops it. Screens that show it refresh every second.
 // Mob Radar is not a drink for healing, so it has no cooldown.
 const POTION_CD = 10;
-function cooled(id) { return ITEMS[id].type === 'potion' && !ITEMS[id].radar && !ITEMS[id].guide; }
+function cooled(id) { return ITEMS[id].type === 'potion' && !ITEMS[id].radar && !ITEMS[id].guide && !ITEMS[id].safeGuide; }
 // True when an item would only heal HP or MP you already have full (owner: don't let me eat at full HP).
 function noNeed(id) {
   const it = ITEMS[id];
-  if (!it || it.mystery || it.guide || it.radar) return false;
+  if (!it || it.mystery || it.guide || it.radar || it.safeGuide) return false;
   const heals = !!(it.heal || (it.type === 'junk' && it.edible)), mana = !!it.mana;
   if (!heals && !mana) return false;
   const s = stats();
@@ -2900,7 +2945,7 @@ function gainXp(n) {
 }
 
 function endBattleReturn() {
-  calmT = 0; regenAcc = 0; guideFrom = -1; spotted = null; spotGrace = 1.5;
+  calmT = 0; regenAcc = 0; guideFrom = -1; safeFrom = -1; spotted = null; spotGrace = 1.5;
   textbox.classList.remove('picking');
   if (B && B.fled) G.buff = null;
   mode = 'map';
@@ -3081,6 +3126,7 @@ function drawMiniMap() {
   const inMini = (p) => p.x >= ox && p.x < ox + MW && p.y >= oy && p.y < oy + MH;
   for (const g of FL.gates || []) if (inMini(g) && !G.killed.includes(g.keeper)) { ctx.fillStyle = '#c8334a'; ctx.fillRect(sx + g.x - ox, sy + g.y - oy - 1, 1, 3); }
   for (const b of FL.bosses) if (!G.bossesDead.includes(b.id) && seen(b.x, b.y) && inMini(b)) { ctx.fillStyle = '#c8334a'; ctx.fillRect(sx + b.x - ox - 1, sy + b.y - oy - 1, 3, 3); }
+  if (safePath) { ctx.fillStyle = '#fff6e0'; for (const i of safePath) { const gx = i % FL.w, gy = (i / FL.w) | 0; if (inMini({ x: gx, y: gy })) ctx.fillRect(sx + gx - ox, sy + gy - oy, 1, 1); } }
   if (guidePath) {
     ctx.fillStyle = '#b8e05a';
     for (const i of guidePath) { const gx = i % FL.w, gy = (i / FL.w) | 0; if (inMini({ x: gx, y: gy })) ctx.fillRect(sx + gx - ox, sy + gy - oy, 1, 1); }
@@ -3207,6 +3253,11 @@ function loop(now) {
         G.guide -= dt;
         if (G.guide <= 0) { G.guide = 0; guidePath = null; say('Your Boss Compass wore off.'); updateHud(); }
         else updateGuide();
+      }
+      if (G.safeGuide > 0) {
+        G.safeGuide -= dt;
+        if (G.safeGuide <= 0) { G.safeGuide = 0; safePath = null; say('Your Safe Room Compass wore off.'); updateHud(); }
+        else updateSafeGuide();
       }
       if (G.radar > 0) {
         G.radar -= dt;
