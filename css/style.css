@@ -241,12 +241,15 @@ textarea { width: 100%; font-family: var(--body); font-size: 18px; line-height: 
 .sheet-src .up { color: var(--green); } .sheet-src .down { color: #ff8a8a; }
 .foe .xpv { color: var(--gold); font-size: 12px; }
 
-/* Movement stick */
-.stick { width: 150px; height: 150px; flex: none; display: flex; align-items: center; justify-content: center; }
-.stick-ring { position: relative; width: 140px; height: 140px; border-radius: 50%; background: radial-gradient(circle, #2c2040 0%, var(--edge2) 70%); border: 4px solid var(--ink); box-shadow: inset 0 0 0 3px var(--edge); }
-.stick-ring .arw { position: absolute; color: var(--edge); font-size: 14px; line-height: 1; }
-.stick-ring .u { top: 8px; left: 50%; transform: translateX(-50%); } .stick-ring .d { bottom: 8px; left: 50%; transform: translateX(-50%); }
-.stick-ring .l { left: 9px; top: 50%; transform: translateY(-50%); } .stick-ring .r { right: 9px; top: 50%; transform: translateY(-50%); }
+/* Movement stick: as big as the screen allows next to the A/B column (up to 210px). */
+.stick { --sz: clamp(130px, min(100vw - 184px, 100dvh - 430px), 210px); width: var(--sz); height: var(--sz); flex: none; display: flex; align-items: center; justify-content: center; }
+.stick-ring { position: relative; width: calc(100% - 6px); height: calc(100% - 6px); border-radius: 50%; background: radial-gradient(circle, #2c2040 0%, var(--edge2) 70%); border: 4px solid var(--ink); box-shadow: inset 0 0 0 3px var(--edge); }
+.stick-ring .arw { position: absolute; color: var(--edge); font-size: 16px; line-height: 1; }
+.stick-ring .u { top: 9px; left: 50%; transform: translateX(-50%); } .stick-ring .d { bottom: 9px; left: 50%; transform: translateX(-50%); }
+.stick-ring .l { left: 10px; top: 50%; transform: translateY(-50%); } .stick-ring .r { right: 10px; top: 50%; transform: translateY(-50%); }
 .stick-ring[data-dir=up] .u, .stick-ring[data-dir=down] .d, .stick-ring[data-dir=left] .l, .stick-ring[data-dir=right] .r { color: var(--cyan); }
-.knob { position: absolute; left: 50%; top: 50%; width: 58px; height: 58px; margin: -29px 0 0 -29px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #8b84a3, #5a5373 60%, #3b2a4d); border: 3px solid var(--ink); box-shadow: 0 3px 0 #000; pointer-events: none; }
-@media (max-height: 700px) { .stick { width: 124px; height: 124px; } .stick-ring { width: 118px; height: 118px; } .knob { width: 48px; height: 48px; margin: -24px 0 0 -24px; } }
+.knob { position: absolute; left: 50%; top: 50%; width: 42%; height: 42%; margin: -21% 0 0 -21%; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #8b84a3, #5a5373 60%, #3b2a4d); border: 3px solid var(--ink); box-shadow: 0 3px 0 #000; pointer-events: none; }
+/* The A/B column sits beside the stick, with Bag/Gear/Map/Pause as a 2x2 grid so nothing runs off the screen. */
+.pad-wrap .ab { flex: none; width: 146px; }
+.pad-wrap .small-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; }
+.pad-wrap .chip { height: 40px; padding: 0 6px; }
