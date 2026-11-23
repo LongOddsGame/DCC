@@ -191,6 +191,7 @@ export const ITEMS = {
   potion_heal: { name: 'Health Potion', type: 'potion', rarity: 'common', heal: 25, price: 8, desc: 'Heals 25.' },
   potion_big: { name: 'Big Health Potion', type: 'potion', rarity: 'silver', heal: 60, desc: 'Heals 60.' },
   potion_mana: { name: 'Mana Potion', type: 'potion', rarity: 'common', mana: 12, price: 10, desc: 'Restores 12 MP.' },
+  potion_mana_big: { name: 'Big Mana Potion', type: 'potion', rarity: 'silver', mana: 35, price: 26, desc: 'Restores 35 MP.' },
   potion_path: { name: 'Boss Compass Potion', type: 'potion', rarity: 'rusty', guide: 120, price: 15, desc: 'Draws the way to the nearest boss on your maps for 120 seconds of play.' },
   potion_safe: { name: 'Safe Room Compass', type: 'potion', rarity: 'rusty', safeGuide: 90, price: 10, desc: 'Draws the way to the nearest safe room you have not visited on your maps for 90 seconds of play.' },
   potion_radar: { name: 'Mob Radar Potion', type: 'potion', rarity: 'rusty', radar: 60, price: 12, desc: 'Shows every mob on your map for 60 seconds of play.' },
@@ -273,9 +274,9 @@ export const ITEMS = {
 // What each loot box tier can hold. [itemId, weight, minCount, maxCount]
 export const LOOT = {
   box_rusty: [['potion_heal', 5, 1, 2], ['food_pretzel', 4, 1, 3], ['food_hotdog', 2, 1, 1], ['bomb', 3, 1, 2], ['potion_mystery', 2, 1, 1], ['w_pipe', 1, 1, 1], ['a_vest', 1, 1, 1], ['j_wire', 3, 1, 2], ['potion_mana', 2, 1, 1], ['potion_radar', 2, 1, 1], ['potion_path', 2, 1, 1], ['potion_safe', 2, 1, 1], ['scroll_venom', 1, 1, 1], ['scroll_iron', 1, 1, 1], ['h_cap', 1, 1, 1], ['s_tee', 1, 1, 1], ['r_band', 1, 1, 1], ['f_flops', 1, 1, 1], ['j_feather', 2, 1, 2], ['n_whistle', 1, 1, 1], ['g_mood', 1, 1, 1], ['l_shorts', 1, 1, 1], ['k_towel', 1, 1, 1]],
-  box_silver: [['potion_heal', 4, 2, 3], ['potion_big', 3, 1, 1], ['potion_mana', 3, 1, 2], ['bomb', 3, 2, 3], ['w_bar', 2, 1, 1], ['a_jacket', 2, 1, 1], ['potion_mystery', 2, 1, 2], ['box_rusty', 1, 1, 2], ['potion_radar', 2, 1, 2], ['potion_path', 2, 1, 1], ['scroll_frost', 1, 1, 1], ['scroll_mend', 1, 1, 1], ['scroll_leech', 1, 1, 1], ['h_hardhat', 1, 1, 1], ['s_flannel', 1, 1, 1], ['r_watch', 1, 1, 1], ['f_sneaks', 1, 1, 1], ['h_cap', 1, 1, 1], ['s_tee', 1, 1, 1], ['n_locket', 1, 1, 1], ['g_class', 1, 1, 1], ['g_signet', 1, 1, 1], ['l_jeans', 1, 1, 1], ['k_tarp', 1, 1, 1]],
-  box_gold: [['potion_big', 4, 1, 2], ['bomb_big', 3, 1, 2], ['w_mic', 2, 1, 1], ['a_suit', 2, 1, 1], ['box_silver', 2, 1, 1], ['potion_mana', 3, 2, 3], ['scroll_fireball', 2, 1, 1], ['scroll_frost', 1, 1, 1], ['potion_radar', 1, 2, 2], ['h_tiara', 1, 1, 1], ['s_jersey', 1, 1, 1], ['r_cuffs', 1, 1, 1], ['f_boots', 1, 1, 1], ['s_flannel', 1, 1, 1], ['n_chain', 1, 1, 1], ['g_ruby', 1, 1, 1], ['l_cargo', 1, 1, 1], ['k_cape', 1, 1, 1]],
-  box_patron: [['w_bat', 2, 1, 1], ['a_coat', 2, 1, 1], ['potion_big', 3, 2, 3], ['bomb_big', 3, 1, 2], ['box_gold', 1, 1, 1], ['potion_mystery', 2, 3, 4], ['scroll_lightning', 2, 1, 1], ['scroll_fireball', 1, 1, 1], ['h_crown', 1, 1, 1], ['s_silk', 1, 1, 1], ['r_bangle', 1, 1, 1], ['f_loafers', 1, 1, 1], ['n_pendant', 1, 1, 1], ['g_band', 1, 1, 1], ['l_tux', 1, 1, 1], ['k_mink', 1, 1, 1]],
+  box_silver: [['potion_heal', 4, 2, 3], ['potion_big', 3, 1, 1], ['potion_mana', 3, 1, 2], ['potion_mana_big', 1, 1, 1], ['bomb', 3, 2, 3], ['w_bar', 2, 1, 1], ['a_jacket', 2, 1, 1], ['potion_mystery', 2, 1, 2], ['box_rusty', 1, 1, 2], ['potion_radar', 2, 1, 2], ['potion_path', 2, 1, 1], ['scroll_frost', 1, 1, 1], ['scroll_mend', 1, 1, 1], ['scroll_leech', 1, 1, 1], ['h_hardhat', 1, 1, 1], ['s_flannel', 1, 1, 1], ['r_watch', 1, 1, 1], ['f_sneaks', 1, 1, 1], ['h_cap', 1, 1, 1], ['s_tee', 1, 1, 1], ['n_locket', 1, 1, 1], ['g_class', 1, 1, 1], ['g_signet', 1, 1, 1], ['l_jeans', 1, 1, 1], ['k_tarp', 1, 1, 1]],
+  box_gold: [['potion_big', 4, 1, 2], ['bomb_big', 3, 1, 2], ['w_mic', 2, 1, 1], ['a_suit', 2, 1, 1], ['box_silver', 2, 1, 1], ['potion_mana', 2, 1, 2], ['potion_mana_big', 2, 1, 2], ['scroll_fireball', 2, 1, 1], ['scroll_frost', 1, 1, 1], ['potion_radar', 1, 2, 2], ['h_tiara', 1, 1, 1], ['s_jersey', 1, 1, 1], ['r_cuffs', 1, 1, 1], ['f_boots', 1, 1, 1], ['s_flannel', 1, 1, 1], ['n_chain', 1, 1, 1], ['g_ruby', 1, 1, 1], ['l_cargo', 1, 1, 1], ['k_cape', 1, 1, 1]],
+  box_patron: [['w_bat', 2, 1, 1], ['a_coat', 2, 1, 1], ['potion_big', 3, 2, 3], ['potion_mana_big', 3, 1, 2], ['bomb_big', 3, 1, 2], ['box_gold', 1, 1, 1], ['potion_mystery', 2, 3, 4], ['scroll_lightning', 2, 1, 1], ['scroll_fireball', 1, 1, 1], ['h_crown', 1, 1, 1], ['s_silk', 1, 1, 1], ['r_bangle', 1, 1, 1], ['f_loafers', 1, 1, 1], ['n_pendant', 1, 1, 1], ['g_band', 1, 1, 1], ['l_tux', 1, 1, 1], ['k_mink', 1, 1, 1]],
 };
 export const BOX_TOKENS = { box_rusty: [3, 8], box_silver: [8, 16], box_gold: [18, 30], box_patron: [25, 50] };
 
@@ -386,7 +387,7 @@ export const RARITY_PRICE = { common: 6, rusty: 12, silver: 28, gold: 60, patron
 // Penny's shop gets better as you level up. Each tier unlocks at a level.
 export const SHOP_TIERS = [
   { lvl: 1, rarity: 'rusty', basics: ['potion_heal', 'potion_mana', 'potion_radar', 'potion_path', 'potion_safe', 'food_hotdog', 'bomb', 'box_rusty'], scrolls: ['scroll_venom', 'scroll_iron'] },
-  { lvl: 3, rarity: 'silver', basics: ['potion_big', 'box_silver'], scrolls: ['scroll_frost', 'scroll_mend', 'scroll_leech'] },
+  { lvl: 3, rarity: 'silver', basics: ['potion_big', 'potion_mana_big', 'box_silver'], scrolls: ['scroll_frost', 'scroll_mend', 'scroll_leech'] },
   { lvl: 5, rarity: 'gold', basics: ['bomb_big', 'box_gold'], scrolls: ['scroll_fireball'] },
   { lvl: 8, rarity: 'patron', basics: ['box_patron'], scrolls: ['scroll_lightning'] },
 ];
@@ -409,6 +410,7 @@ export const RECIPES = [
   { out: 'w_wrench', lvl: 3, need: { w_pipe: 1, j_wire: 2 } },
   { out: 'f_feather', lvl: 3, need: { j_feather: 4, j_wire: 1 }, tokens: 5 },
   { out: 'potion_big', lvl: 3, need: { potion_heal: 2, j_jelly: 1 } },
+  { out: 'potion_mana_big', lvl: 3, need: { potion_mana: 2, j_feather: 1 } },
   { out: 'bomb_big', lvl: 4, need: { bomb: 3, j_wire: 2 } },
   { out: 'r_cuffs', lvl: 5, need: { r_band: 1, j_token: 4 }, tokens: 20 },
   { out: 'h_tiara', lvl: 6, need: { h_hardhat: 1, j_token: 4 }, tokens: 30 },
