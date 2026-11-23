@@ -6,6 +6,7 @@ import { sprite, heroSprite, flipped, docSprite, boxSprite, mobSprite, itemIcon,
 import { SLOT_COUNT, readSlot, writeSlot, deleteSlot, listSlots } from './save.js?v=__BUILD_VERSION__';
 import { VERSION, checkForUpdate, installUpdate } from './version.js?v=__BUILD_VERSION__';
 import { SUGGEST_KEY } from './config.js?v=__BUILD_VERSION__';
+import { trackPlay, startHero, flushStats, statsOn, setStatsOn, playerName, setPlayerName } from './stats.js?v=__BUILD_VERSION__';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('game');
@@ -198,6 +199,7 @@ function newGame(slot, name, jobId, raceId, clsId, tutorial = true, perks = [], 
     doc: { trust: 0, fear: 0, respect: 0, owed: 0, met: false, eventDone: false, gift: false, memory: [] },
     sideFx: {}, ach: {}, boxesOpened: 0, deaths: 0, kills: 0, spared: 0, steps: 0, playTime: 0, buff: null,
   };
+  startHero(G);
   if (hasPerk('charmer')) G.doc.trust += 10;
   if (hasPerk('stash')) { addItem('box_rusty', 2, true); G.tokens += 20; }
   if (raceId === 'goblin') G.doc.trust -= 5;
@@ -235,6 +237,7 @@ function loadSlot(i) {
   if (!data) return false;
   G = data;
   G.slot = i;
+  startHero(G);
   // Bring older saves up to date.
   G.equip = { ...emptyEquip(), ...(G.equip || {}) };
   G.moves = G.moves || [];
@@ -327,6 +330,8 @@ function showTitle() {
     <div class="foot">${upd}
       <span class="muted" style="font-size:14px; min-height:18px">${esc(titleState.updateMsg)}</span>
       ${sugBtn}
+      <button class="btn grey" data-act="settings">SETTINGS</button>
+      <span class="muted" style="font-size:13px; text-align:center">${statsOn() ? 'Play stats (hero names, progress and play time) are sent to the developer. You can turn this off in Settings.' : 'Play stats are off.'}</span>
       <span class="version">Build ${esc(VERSION)}</span>
     </div>`);
 }
@@ -1329,7 +1334,21 @@ window.addEventListener('keyup', (e) => {
 });
 window.addEventListener('blur', () => { keysDown = []; moveHeld = null; });
 // Leaving the app pauses the game.
-document.addEventListener('visibilitychange', () => { if (document.hidden && canAct()) openMenu(); });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) return;
+  recordPlay();
+  flushStats();
+  if (canAct()) openMenu();
+});
+// Play stats snapshot of the current hero (see stats.js).
+function recordPlay() {
+  if (!G || !FL) return;
+  trackPlay(G, () => ({
+    name: G.name, sex: G.sex, race: race().name, cls: cls().name, job: job().name, lvl: G.lvl,
+    where: G.floor === 0 ? 'Tutorial' : `Floor ${G.floor}${FL.stages && G.pos ? ', stage ' + (stageAt(FL, G.pos.x) + 1) + ' of ' + FL.stages.length : ''}${G.cleared ? ' (cleared)' : ''}`,
+    deaths: G.deaths, kills: G.kills,
+  }));
+}
 
 function canAct() { return mode === 'map' && overlay.hidden && !prompt; }
 
@@ -1863,6 +1882,7 @@ function openMenu(force = false) {
     <button class="btn green" data-act="closebag">RESUME</button>
     ${FL.tutorial ? '<button class="btn" data-act="skiptut">SKIP THE TUTORIAL</button>' : ''}
     <button class="btn purple" data-act="suggest">SUGGESTIONS BOX</button>
+    <button class="btn grey" data-act="settings">SETTINGS</button>
     <button class="btn grey" data-act="quit">QUIT TO TITLE (LOSES PROGRESS SINCE LAST SAVE)</button>
     <span class="version" style="text-align:center">Build ${esc(VERSION)}</span>`);
 }
@@ -2770,6 +2790,7 @@ function drawIdle() {
 let lastT = performance.now();
 let calmT = 0, regenAcc = 0; // seconds since the last fight, and partial HP healed
 let hudTick = 0;
+let statsAcc = 0;
 function loop(now) {
   const dt = Math.min(0.1, (now - lastT) / 1000);
   lastT = now;
@@ -2778,6 +2799,8 @@ function loop(now) {
   if (mode === 'map' && G && FL) {
     if (canAct()) {
       G.playTime += dt;
+      statsAcc += dt;
+      if (statsAcc >= 15) { statsAcc = 0; recordPlay(); }
       if (G.potionCd > 0) G.potionCd = Math.max(0, G.potionCd - dt);
       // Out-of-combat healing, like most action RPGs: waits 5 seconds after a fight, eases in, then heals
       // about 1 HP a second (1% of max HP a second once your max HP passes 100).
@@ -2835,7 +2858,7 @@ canvas.addEventListener('click', (e) => {
 // showing the owner's address. If sending fails or no key is set yet, the suggestion
 // waits on this device and is sent next time the game opens.
 const SUG_QUEUE = 'longodds.suggestions';
-let sugState = { from: 'title', msg: '', kind: 'Idea' };
+let sugState = { from: 'title', msg: '', kind: 'Idea', name: playerName() };
 function sugQueue() { try { return JSON.parse(localStorage.getItem(SUG_QUEUE) || '[]'); } catch { return []; } }
 function setSugQueue(q) { try { localStorage.setItem(SUG_QUEUE, JSON.stringify(q)); } catch { /* storage blocked */ } }
 async function sendSuggestion(sg) {
@@ -2912,6 +2935,7 @@ Object.assign(overlayHandlers, {
       kind: sugState.kind, text, name: (sugState.name || '').trim(), build: VERSION, at: new Date().toISOString(),
       where: G ? `${G.floor === 0 ? 'Tutorial' : 'Floor ' + G.floor}, level ${G.lvl} ${race().name} ${cls().name}` : 'Title screen',
     };
+    if (sg.name) setPlayerName(sg.name);
     const sent = await sendSuggestion(sg);
     if (!sent) setSugQueue(sugQueue().concat(sg));
     sugState.draft = '';
@@ -2922,3 +2946,26 @@ Object.assign(overlayHandlers, {
   },
 });
 flushSuggestions();
+
+// ---------- Settings ----------
+let setFrom = 'title';
+function openSettings(from) { setFrom = from; renderSettings(); }
+function renderSettings() {
+  const on = statsOn();
+  showOverlay(`
+    <h2>SETTINGS</h2>
+    <label>Send play stats to the developer</label>
+    <div class="tabs"><button class="tab ${on ? 'on' : ''}" data-act="statsset" data-id="on">On</button><button class="tab ${on ? '' : 'on'}" data-act="statsset" data-id="off">Off</button></div>
+    <p class="muted" style="font-size:15px">When on, the game sends the developer at most one short report a day: your hero names, race, class, level, floor, play time, your name below if you give one, and a random player number (not linked to you). It helps make the game better. Nothing else is sent.</p>
+    <label for="setname">Your name (optional)</label>
+    <input id="setname" type="text" maxlength="30" autocomplete="off" value="${esc(playerName())}" placeholder="Leave blank to stay anonymous">
+    <button class="btn green" data-act="setback">${setFrom === 'menu' ? 'BACK TO GAME' : 'BACK TO TITLE'}</button>`);
+  const nm = $('setname');
+  nm.addEventListener('input', () => { setPlayerName(nm.value); sugState.name = nm.value.trim(); });
+}
+Object.assign(overlayHandlers, {
+  settings: () => openSettings(mode === 'map' ? 'menu' : 'title'),
+  statsset: (_, b) => { setStatsOn(b.dataset.id === 'on'); renderSettings(); },
+  setback: () => { if (setFrom === 'menu') openMenu(true); else showTitle(); },
+});
+flushStats();
