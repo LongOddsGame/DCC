@@ -286,3 +286,4 @@ textarea { width: 100%; font-family: var(--body); font-size: 18px; line-height: 
 .bag-top { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .bag-top .btn { height: 44px; font-size: 13px; padding: 0 6px; }
 .bag-top .btn:only-child { grid-column: 1 / -1; }
+.xfer-code { width: 100%; box-sizing: border-box; font-family: monospace; font-size: 16px; background: var(--ink); color: var(--paper); border: 2px solid var(--edge); padding: 8px; resize: vertical; word-break: break-all; }
