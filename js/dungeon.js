@@ -123,16 +123,34 @@ export function generateFloor(seed, floor, opts = {}) {
   }
   for (const sr of safeRooms) for (let yy = sr.y; yy < sr.y + sr.h; yy++) for (let xx = sr.x; xx < sr.x + sr.w; xx++) set(xx, yy, T.SAFE);
   const safeRoom = safeRooms[0];
-  const doc = { x: safeRoom.cx, y: safeRoom.y + 1 };
-  const booths = safeRooms.map((r) => ({ x: Math.min(r.cx + 2, r.x + r.w - 1), y: r.y + 1 }));
-  const benches = safeRooms.map((r) => ({ x: Math.max(r.cx - 2, r.x), y: r.y + 1 }));
-  const shops = safeRooms.filter((r) => r.w >= 3 && r.h >= 3).map((r) => ({ x: r.x + r.w - 1, y: r.y + r.h - 1 }));
+  // Never put furniture (or a chest or mob) right inside a doorway: it used to block the way into safe rooms.
+  const inRoom = (r, x, y) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+  const nearDoor = (r, x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => !inRoom(r, x + dx, y + dy) && at(x + dx, y + dy) !== T.WALL);
+  const placed = new Set([key(stairs), ...bosses.map(key), key({ x: start.cx, y: start.cy }), ...gates.map(key)]);
+  const place = (r, want) => {
+    const ok = (x, y) => inRoom(r, x, y) && !nearDoor(r, x, y) && !placed.has(x + ',' + y);
+    let best = ok(want.x, want.y) ? want : null;
+    if (!best) {
+      let bd = 1e9;
+      for (let yy = r.y; yy < r.y + r.h; yy++) for (let xx = r.x; xx < r.x + r.w; xx++) {
+        const d = Math.abs(xx - want.x) + Math.abs(yy - want.y);
+        if (d < bd && ok(xx, yy)) { bd = d; best = { x: xx, y: yy }; }
+      }
+    }
+    if (!best) best = want;
+    placed.add(best.x + ',' + best.y);
+    return best;
+  };
+  const doc = place(safeRoom, { x: safeRoom.cx, y: safeRoom.y + 1 });
+  const booths = safeRooms.map((r) => place(r, { x: Math.min(r.cx + 2, r.x + r.w - 1), y: r.y + 1 }));
+  const benches = safeRooms.map((r) => place(r, { x: Math.max(r.cx - 2, r.x), y: r.y + 1 }));
+  const shops = safeRooms.filter((r) => r.w >= 3 && r.h >= 3).map((r) => place(r, { x: r.x + r.w - 1, y: r.y + r.h - 1 }));
 
   const taken = new Set([key(stairs), ...bosses.map(key), key(doc), ...booths.map(key), ...benches.map(key), ...shops.map(key), key({ x: start.cx, y: start.cy }), ...gates.map(key)]);
   const freeSpot = (room) => {
     for (let i = 0; i < 40; i++) {
       const p = { x: rng.int(room.x, room.x + room.w - 1), y: rng.int(room.y, room.y + room.h - 1) };
-      if (at(p.x, p.y) === T.FLOOR && !taken.has(key(p))) { taken.add(key(p)); return p; }
+      if (at(p.x, p.y) === T.FLOOR && !taken.has(key(p)) && !nearDoor(room, p.x, p.y)) { taken.add(key(p)); return p; }
     }
     return null;
   };

@@ -273,3 +273,16 @@ textarea { width: 100%; font-family: var(--body); font-size: 18px; line-height: 
 @keyframes hurtFlash { 0% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes hurtPulse { 0%, 100% { opacity: 0.1; } 50% { opacity: 0.85; } }
 @media (prefers-reduced-motion: reduce) { #hurt.low { animation-duration: 2s; } }
+.item-group { font-family: var(--pixel); font-size: 9px; line-height: 1.6; letter-spacing: 1px; text-transform: uppercase; color: var(--gold); margin: 8px 0 0; padding-bottom: 2px; border-bottom: 1px solid var(--edge2); }
+.item-group:first-child { margin-top: 0; }
+#boxpop { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 3; width: auto; min-width: 0; padding: 0 12px; height: 36px; font-size: 12px; white-space: nowrap; box-shadow: 0 0 0 3px var(--ink), 0 0 14px rgba(245, 197, 66, 0.7); animation: boxPop 0.35s ease-out 1; }
+#boxpop[hidden] { display: none; }
+@keyframes boxPop { 0% { transform: translateX(-50%) scale(0.6); opacity: 0; } 100% { transform: translateX(-50%) scale(1); opacity: 1; } }
+/* Bag tidy-up: tighter filter rows, quieter disabled buttons, slimmer header buttons. */
+#overlay .tab { height: 34px; font-size: 14px; }
+#overlay .tab.on { background: #1d3340; }
+#overlay .tabs { gap: 5px; }
+.item .act:disabled { background: transparent; border-color: var(--edge2); color: var(--edge); }
+.bag-top { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.bag-top .btn { height: 44px; font-size: 13px; padding: 0 6px; }
+.bag-top .btn:only-child { grid-column: 1 / -1; }
