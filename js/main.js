@@ -6,7 +6,7 @@ import { sprite, heroSprite, flipped, docSprite, boxSprite, mobSprite, itemIcon,
 import { SLOT_COUNT, readSlot, writeSlot, deleteSlot, listSlots } from './save.js?v=__BUILD_VERSION__';
 import { VERSION, checkForUpdate, installUpdate } from './version.js?v=__BUILD_VERSION__';
 import { SUGGEST_KEY } from './config.js?v=__BUILD_VERSION__';
-import { trackPlay, startHero, flushStats, statsOn, setStatsOn, playerName, setPlayerName } from './stats.js?v=__BUILD_VERSION__';
+import { trackPlay, flushStats, statsOn, setStatsOn, playerName, setPlayerName } from './stats.js?v=__BUILD_VERSION__';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('game');
@@ -199,7 +199,6 @@ function newGame(slot, name, jobId, raceId, clsId, tutorial = true, perks = [], 
     doc: { trust: 0, fear: 0, respect: 0, owed: 0, met: false, eventDone: false, gift: false, memory: [] },
     sideFx: {}, ach: {}, boxesOpened: 0, deaths: 0, kills: 0, spared: 0, steps: 0, playTime: 0, buff: null,
   };
-  startHero(G);
   if (hasPerk('charmer')) G.doc.trust += 10;
   if (hasPerk('stash')) { addItem('box_rusty', 2, true); G.tokens += 20; }
   if (raceId === 'goblin') G.doc.trust -= 5;
@@ -237,7 +236,6 @@ function loadSlot(i) {
   if (!data) return false;
   G = data;
   G.slot = i;
-  startHero(G);
   // Bring older saves up to date.
   G.equip = { ...emptyEquip(), ...(G.equip || {}) };
   G.moves = G.moves || [];
@@ -1343,10 +1341,15 @@ document.addEventListener('visibilitychange', () => {
 // Play stats snapshot of the current hero (see stats.js).
 function recordPlay() {
   if (!G || !FL) return;
-  trackPlay(G, () => ({
+  const add = statsAcc; statsAcc = 0;
+  trackPlay(G, add, () => ({
     name: G.name, sex: G.sex, race: race().name, cls: cls().name, job: job().name, lvl: G.lvl,
     where: G.floor === 0 ? 'Tutorial' : `Floor ${G.floor}${FL.stages && G.pos ? ', stage ' + (stageAt(FL, G.pos.x) + 1) + ' of ' + FL.stages.length : ''}${G.cleared ? ' (cleared)' : ''}`,
-    deaths: G.deaths, kills: G.kills,
+    deaths: G.deaths, kills: G.kills, spared: G.spared, boxes: G.boxesOpened, tokens: G.tokens, floor: G.floor,
+    hp: Math.round(G.hp), maxHp: stats().maxHp, odds: oddsText(), cleared: !!G.cleared,
+    status: G.hp <= 0 ? 'Down (reloading)' : mode === 'battle' || B ? 'In a fight' : FL.tutorial ? 'In the tutorial' : 'Exploring',
+    bosses: `${G.bossesDead.length} of ${FL.bosses ? FL.bosses.length : 0} bosses beaten on this floor`,
+    ach: Object.keys(G.ach || {}).map((k) => (ACHIEVEMENTS[k] ? ACHIEVEMENTS[k].name : k)),
   }));
 }
 
@@ -2796,11 +2799,11 @@ function loop(now) {
   lastT = now;
   frame++;
   ctx.imageSmoothingEnabled = false;
+  // Play stats count walking and fighting, not pause menus or a hidden app.
+  if (G && FL && !document.hidden && ((mode === 'map' && overlay.hidden) || mode === 'battle')) { statsAcc += dt; if (statsAcc >= 15) recordPlay(); }
   if (mode === 'map' && G && FL) {
     if (canAct()) {
       G.playTime += dt;
-      statsAcc += dt;
-      if (statsAcc >= 15) { statsAcc = 0; recordPlay(); }
       if (G.potionCd > 0) G.potionCd = Math.max(0, G.potionCd - dt);
       // Out-of-combat healing, like most action RPGs: waits 5 seconds after a fight, eases in, then heals
       // about 1 HP a second (1% of max HP a second once your max HP passes 100).

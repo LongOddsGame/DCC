@@ -41,26 +41,22 @@ function pending() {
 function fresh() { return { from: today(), sessions: 0, secs: 0, heroes: {} }; }
 function savePending(p) { set(K_PEND, JSON.stringify(p)); }
 
-let lastPT = {}; // hero key -> play time already counted in this page visit
 let counted = false;
 
-// Called often while playing. snap() describes the hero right now.
-export function trackPlay(G, snap) {
-  if (!statsOn() || !G) return;
+// Called every few seconds of active play (walking or fighting, not paused) with the seconds played.
+// snap() describes the hero right now.
+export function trackPlay(G, add, snap) {
+  if (!statsOn() || !G || !(add > 0)) return;
   const key = G.slot + ':' + G.seed;
-  if (lastPT[key] === undefined) { lastPT[key] = G.playTime; return; }
-  const add = G.playTime - lastPT[key];
-  lastPT[key] = G.playTime;
-  if (add <= 0) return;
   const p = pending();
   if (!counted) { p.sessions++; counted = true; }
   p.secs += add;
-  const h = p.heroes[key] || { secs: 0 };
-  p.heroes[key] = { ...h, ...snap(), secs: h.secs + add, total: G.playTime };
+  const now = snap();
+  // The hero as they were when this report started, to show what changed.
+  const h = p.heroes[key] || { secs: 0, start: { lvl: now.lvl, floor: now.floor, kills: now.kills, spared: now.spared, deaths: now.deaths, boxes: now.boxes, tokens: now.tokens, ach: now.ach } };
+  p.heroes[key] = { ...h, ...now, secs: h.secs + add, total: G.playTime };
   savePending(p);
 }
-// The hero was just loaded or made: start counting from its current play time.
-export function startHero(G) { if (G) lastPT[G.slot + ':' + G.seed] = G.playTime; }
 
 function fmt(s) {
   s = Math.round(s);
@@ -74,6 +70,30 @@ function device() {
   return /Mobile/.test(ua) ? 'Phone' : 'Computer';
 }
 
+// One hero's block in the email: who they are, where they stand now, and what happened this time.
+function heroText(h) {
+  const st = h.start || {};
+  const d = (k) => Math.max(0, (h[k] || 0) - (st[k] || 0));
+  const did = [];
+  if (h.lvl > (st.lvl || h.lvl)) did.push(`went from level ${st.lvl} to ${h.lvl}`);
+  if (h.floor > (st.floor ?? h.floor)) did.push(`went from ${st.floor === 0 ? 'the tutorial' : 'floor ' + st.floor} to floor ${h.floor}`);
+  if (d('kills')) did.push(`killed ${d('kills')} mobs`);
+  if (d('spared')) did.push(`spared ${d('spared')}`);
+  if (d('boxes')) did.push(`opened ${d('boxes')} loot boxes`);
+  if (d('deaths')) did.push(`died ${d('deaths')} time${d('deaths') === 1 ? '' : 's'}`);
+  const tok = (h.tokens || 0) - (st.tokens || 0);
+  if (tok) did.push(`${tok > 0 ? 'gained' : 'spent'} ${Math.abs(tok)} tokens`);
+  const newAch = (h.ach || []).filter((a) => !(st.ach || []).includes(a));
+  if (newAch.length) did.push(`earned ${newAch.join(', ')}`);
+  return [
+    `${h.name}: ${h.sex === 'f' ? 'female' : 'male'} ${h.race} ${h.cls}, former ${h.job}`,
+    `Level ${h.lvl} · ${h.where} · ${h.status || ''} · HP ${h.hp}/${h.maxHp} · odds ${h.odds}`,
+    `${h.bosses || ''} · ${h.deaths} deaths, ${h.kills} kills, ${h.spared} spared overall`,
+    `Played ${fmt(h.secs)} this time (${fmt(h.total)} total on this hero)`,
+    `This time: ${did.length ? did.join(', ') : 'mostly exploring'}.`,
+  ].join('\n');
+}
+
 let sending = false;
 // Sends the waiting report if one is due. keepalive lets it finish if the game is closing.
 export async function flushStats() {
@@ -82,7 +102,7 @@ export async function flushStats() {
   if (p.secs < MIN_SECONDS || get(K_LAST) === today()) return;
   const id = playerId(), name = playerName();
   const heroes = Object.values(p.heroes).sort((a, b) => b.secs - a.secs);
-  const lines = heroes.map((h) => `${h.name} (${h.sex === 'f' ? 'female' : 'male'} ${h.race} ${h.cls}, former ${h.job}) · level ${h.lvl} · ${h.where} · played ${fmt(h.secs)} in this report, ${fmt(h.total)} total · deaths ${h.deaths}, kills ${h.kills}`);
+  const lines = heroes.map(heroText);
   const body = new URLSearchParams({
     access_key: SUGGEST_KEY,
     subject: `[Long Odds stats] ${id}${name ? ' (' + name + ')' : ''}: ${fmt(p.secs)} played`,
@@ -93,7 +113,8 @@ export async function flushStats() {
     play_seconds: String(Math.round(p.secs)),
     sessions: String(p.sessions),
     covers: p.from === today() ? p.from : `${p.from} to ${today()}`,
-    heroes: lines.join('\n'),
+    summary: `${heroes.length} hero${heroes.length === 1 ? '' : 's'} played for ${fmt(p.secs)} over ${p.sessions || 1} session${p.sessions === 1 ? '' : 's'}.`,
+    heroes: lines.join('\n\n'),
     device: device(),
     build: VERSION,
     botcheck: '',
