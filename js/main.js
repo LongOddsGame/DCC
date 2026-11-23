@@ -12,6 +12,8 @@ const $ = (id) => document.getElementById(id);
 const canvas = $('game');
 const ctx = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false;
+// The game view is 240 game pixels wide. On the map it grows taller to fill the screen (VH rows); battles keep 240x160.
+let VH = 160;
 const overlay = $('overlay');
 const controls = $('controls');
 const textbox = $('textbox');
@@ -259,6 +261,10 @@ function loadSlot(i) {
 }
 
 // ---------- HUD ----------
+function flashHp() {
+  const bar = $('hp-fill').parentElement;
+  bar.classList.remove('hit'); void bar.offsetWidth; bar.classList.add('hit');
+}
 function updateHud() {
   if (!G) return;
   const s = stats();
@@ -1214,15 +1220,9 @@ function renderControls() {
     return;
   }
   if (mode === 'map') {
-    controls.innerHTML = `
-      <div class="pad-wrap">
-        <div class="stick" aria-label="Movement stick: drag to walk"><div class="stick-ring"><span class="arw u">▲</span><span class="arw d">▼</span><span class="arw l">◀</span><span class="arw r">▶</span><div class="knob"></div></div></div>
-        <div class="ab">
-          <div class="ab-row"><button class="round btn-b" data-k="bag" aria-label="Open bag">B</button><button class="round btn-a" data-k="a" aria-label="Interact">A</button></div>
-          <div class="small-row"><button class="chip" data-k="bag">Bag</button><button class="chip" data-k="gear">Gear</button><button class="chip" data-k="map">Map</button><button class="chip" data-k="menu">Pause</button></div>
-        </div>
-      </div>`;
+    controls.innerHTML = `<div class="small-row map-bar"><button class="chip" data-k="bag">Bag</button><button class="chip" data-k="gear">Gear</button><button class="chip" data-k="map">Map</button><button class="chip" data-k="menu">Pause</button></div>`;
   } else if (mode === 'battle') renderBattleControls();
+  fitView();
 }
 
 function ask(text, choices) {
@@ -1246,7 +1246,6 @@ controls.addEventListener('click', (e) => {
     if (k.dataset.k === 'gear') openGear('map');
     if (k.dataset.k === 'menu') openMenu();
     if (k.dataset.k === 'map') openFullMap();
-    if (k.dataset.k === 'a') interactAdjacent();
   }
   const bb = e.target.closest('[data-b]');
   if (bb && mode === 'battle' && !bb.disabled) battleInput(bb.dataset.b, bb.dataset.arg);
@@ -1262,11 +1261,16 @@ controls.addEventListener('pointerdown', (e) => {
   moveHeld = d.dataset.dir;
   try { d.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
 });
-// Movement stick: put your thumb down anywhere on it and drag. The farther direction wins.
+// Floating movement stick: on the map, touch anywhere on the lower part of the game screen and drag.
+// The see-through stick appears under your thumb; let go and it fades back to its resting spot.
+const stageEl = $('stage');
+const fstick = document.createElement('div');
+fstick.id = 'fstick';
+fstick.innerHTML = '<div class="stick-ring"><span class="arw u">▲</span><span class="arw d">▼</span><span class="arw l">◀</span><span class="arw r">▶</span><div class="knob"></div></div>';
+stageEl.appendChild(fstick);
 let stickId = null;
 function stickMove(e) {
-  const st = controls.querySelector('.stick-ring');
-  if (!st) return;
+  const st = fstick.firstChild;
   const r = st.getBoundingClientRect();
   let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
   const max = r.width * 0.32, len = Math.hypot(dx, dy);
@@ -1277,21 +1281,29 @@ function stickMove(e) {
 }
 function stickEnd() {
   stickId = null; moveHeld = null;
-  const st = controls.querySelector('.stick-ring');
-  if (st) { st.querySelector('.knob').style.transform = ''; st.dataset.dir = ''; }
+  const st = fstick.firstChild;
+  st.querySelector('.knob').style.transform = ''; st.dataset.dir = '';
+  fstick.classList.remove('active');
+  fstick.style.left = ''; fstick.style.top = '';
 }
-controls.addEventListener('pointerdown', (e) => {
-  const st = e.target.closest('.stick');
-  if (!st) return;
+stageEl.addEventListener('pointerdown', (e) => {
+  if (!$('app').classList.contains('fullview') || !canAct() || stickId !== null) return;
+  const r = stageEl.getBoundingClientRect();
+  if (e.clientY - r.top < r.height * 0.4) return; // the top of the screen is for the mini map and messages
   e.preventDefault();
   stickId = e.pointerId;
-  try { st.setPointerCapture(e.pointerId); } catch { /* fine */ }
+  try { stageEl.setPointerCapture(e.pointerId); } catch { /* fine */ }
+  // Keep the whole stick on screen.
+  const half = fstick.offsetWidth / 2;
+  fstick.style.left = clamp(e.clientX - r.left, half, r.width - half) + 'px';
+  fstick.style.top = clamp(e.clientY - r.top, half, r.height - half) + 'px';
+  fstick.classList.add('active');
   stickMove(e);
 });
-controls.addEventListener('pointermove', (e) => { if (stickId !== null && e.pointerId === stickId) stickMove(e); });
-controls.addEventListener('pointerup', (e) => { if (e.pointerId === stickId) stickEnd(); });
-controls.addEventListener('pointercancel', (e) => { if (e.pointerId === stickId) stickEnd(); });
-controls.addEventListener('touchstart', (e) => { if (e.target.closest('.stick')) e.preventDefault(); }, { passive: false });
+stageEl.addEventListener('pointermove', (e) => { if (stickId !== null && e.pointerId === stickId) stickMove(e); });
+stageEl.addEventListener('pointerup', (e) => { if (e.pointerId === stickId) stickEnd(); });
+stageEl.addEventListener('pointercancel', (e) => { if (e.pointerId === stickId) stickEnd(); });
+stageEl.addEventListener('touchstart', (e) => { if ($('app').classList.contains('fullview')) e.preventDefault(); }, { passive: false });
 // Sliding your thumb onto another arrow changes direction without lifting it.
 controls.addEventListener('pointerover', (e) => {
   if (!moveHeld || !(e.buttons & 1) && e.pointerType === 'mouse') return;
@@ -1351,6 +1363,53 @@ function recordPlay() {
     bosses: `${G.bossesDead.length} of ${FL.bosses ? FL.bosses.length : 0} bosses beaten on this floor`,
     ach: Object.keys(G.ach || {}).map((k) => (ACHIEVEMENTS[k] ? ACHIEVEMENTS[k].name : k)),
   }));
+}
+
+// Size the game view. On the map the game fills the screen: the canvas gets as many rows of pixels
+// as the screen's shape allows, the text box floats over the top of it, and only a small button bar sits below.
+// Battles and menus keep the classic 240x160 view with the text box and buttons underneath.
+function fitView() {
+  const full = mode === 'map' && !prompt && !!G && !!FL;
+  $('app').classList.toggle('fullview', full);
+  if (!full && stickId !== null) stickEnd();
+  let want = 160;
+  if (full) {
+    const w = stageEl.clientWidth || 240, h = stageEl.clientHeight || 160;
+    want = clamp(Math.round((240 * h) / w), 160, 520);
+    // Messages sit just under the mini map (drawn 40 game pixels tall in the top right).
+    textbox.style.top = (stageEl.offsetTop + stageEl.clientTop + Math.ceil((40 * w) / 240) + 4) + 'px';
+  } else textbox.style.top = '';
+  if (canvas.height !== want) { canvas.height = want; ctx.imageSmoothingEnabled = false; }
+  VH = want;
+}
+addEventListener('resize', () => fitView());
+
+// A mob that shares a room with you spots you, shouts, and starts the fight itself.
+let spotted = null, spotGrace = 0;
+function checkSpotted(dt) {
+  if (spotted) {
+    spotted.t -= dt;
+    if (spotted.t <= 0) { const m = spotted.m; spotted = null; if (mobsLive.includes(m) && canAct()) startBattle(m); }
+    return;
+  }
+  if (spotGrace > 0) { spotGrace -= dt; return; }
+  if (FL.tutorial || inSafe()) return;
+  const room = roomAt(FL, G.pos.x, G.pos.y);
+  const m = mobsLive.find((x) => !x.still && !(x.stun > 0) && ((room && roomAt(FL, x.x, x.y) === room) || lineOfSight(x, G.pos, 5)));
+  if (!m) return;
+  spotted = { m, t: 0.7 };
+  moveHeld = null;
+  say(`<b>${esc(MOBS[m.members[0].type].name)}</b> spotted you! Here it comes!`);
+}
+
+// True when a and b share a row or column, are close, and nothing but open floor lies between them (corridors).
+function lineOfSight(a, b, range) {
+  if (a.x !== b.x && a.y !== b.y) return false;
+  const dist = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+  if (dist > range) return false;
+  const sx = Math.sign(b.x - a.x), sy = Math.sign(b.y - a.y);
+  for (let i = 1; i < dist; i++) { const t = tileAt(FL, a.x + sx * i, a.y + sy * i); if (t === T.WALL || objectAt(a.x + sx * i, a.y + sy * i)) return false; }
+  return true;
 }
 
 function canAct() { return mode === 'map' && overlay.hidden && !prompt; }
@@ -1690,9 +1749,9 @@ function renderBag(extra = '') {
     const eq = isEquipped(id);
     const side = it.type === 'potion' && G.sideFx[id] !== undefined ? ' Side effect: ' + SIDE_EFFECTS[G.sideFx[id]].text : '';
     return `<div class="item"><img src="${icon(id)}" alt="">
-      <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))} x${count(id)} ${eq ? '<span class="equipped">EQUIPPED</span>' : ''}${badgeHtml(id)}</span><span class="ds">${isGear(id) ? gearDescHtml(id) : esc(it.desc + side)}${note ? ` <b style="color:var(--pink)">${esc(note)}</b>` : ''}</span></div>
+      <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))} x${count(id)} ${eq ? '<span class="equipped">EQUIPPED</span>' : ''}${badgeHtml(id)}</span><span class="ds">${isGear(id) ? gearDescHtml(id) : esc(it.desc + side)}${note ? ` <b style="color:var(--pink)" ${note.startsWith('Ready in') ? `data-potion-timer="${id}"` : ''}>${esc(note)}</b>` : ''}</span></div>
       <button class="star ${G.favs[id] ? 'on' : ''}" data-act="fav" data-id="${id}" aria-label="Favorite">★</button>
-      ${act ? `<button class="act" data-act="use" data-id="${id}" ${ok ? '' : 'disabled'}>${act}</button>` : ''}</div>`;
+      ${act ? `<button class="act" data-act="use" data-id="${id}" ${ok ? '' : 'disabled'} ${note && note.startsWith('Ready in') ? 'data-potion-btn' : ''}>${act}</button>` : ''}</div>`;
   }).join('') || '<p class="muted">Nothing here yet.</p>';
   const boxes = boxCount();
   const openAll = boxes > 0
@@ -1746,7 +1805,7 @@ function learnScroll(id) {
 // Drinking or eating an item.
 function consume(id) {
   const it = ITEMS[id];
-  if (cooled(id)) { if (B) B.lastPotion = B.turn; else G.potionCd = POTION_CD; }
+  if (cooled(id)) G.potionCd = POTION_CD;
   const s = stats();
   removeItem(id);
   let heal = it.heal || 0;
@@ -1795,14 +1854,22 @@ function consume(id) {
     if (fx.spdBuff) setBuff('spd', fx.spdBuff);
   }
 }
-// Potion cooldown: 15 seconds of play on the map, or once every 2 turns in a fight.
+// Potion cooldown: one clock of 15 real seconds, on the map, in the bag and in fights alike.
+// Only the pause menu (or leaving the app) stops it. Screens that show it refresh every second.
 // Mob Radar is not a drink for healing, so it has no cooldown.
 const POTION_CD = 15;
 function cooled(id) { return ITEMS[id].type === 'potion' && !ITEMS[id].radar && !ITEMS[id].guide; }
 function potionWait(id) {
   if (!cooled(id)) return '';
-  if (B) { const t = 2 - (B.turn - (B.lastPotion ?? -99)); return t > 0 ? `Ready in ${t} turn${t > 1 ? 's' : ''}` : ''; }
   return G.potionCd > 0 ? `Ready in ${Math.ceil(G.potionCd)}s` : '';
+}
+// Keep the "Ready in Xs" labels honest while the bag or the battle item list is open.
+function refreshPotionTimers() {
+  if (B && B.phase === 'items') return renderBattleControls();
+  // In the bag, update the labels in place so the list doesn't jump back to the top.
+  const w = G.potionCd > 0 ? `Ready in ${Math.ceil(G.potionCd)}s` : '';
+  overlay.querySelectorAll('[data-potion-timer]').forEach((el) => { el.textContent = w; });
+  if (!w) overlay.querySelectorAll('[data-potion-btn]').forEach((el) => { el.disabled = false; el.removeAttribute('data-potion-btn'); });
 }
 function setBuff(stat, n) {
   if (B) { B.buff[stat] = (B.buff[stat] || 0) + n; }
@@ -1863,7 +1930,7 @@ function openMenu(force = false) {
   const moves = [cls().skill.name + ' (class)', ...G.moves.map((m) => MOVES[m].name)].join(', ');
   const bossesLeft = FL.bosses.filter((b) => !G.bossesDead.includes(b.id)).length;
   showOverlay(`
-    <p class="banner" style="color:var(--cyan)">PAUSED</p>
+    <p class="banner banner-paused" style="color:var(--cyan)">PAUSED</p>
     <p class="muted" style="text-align:center">The game is stopped${G.radar > 0 ? `, including your Mob Radar (${Math.ceil(G.radar)}s left)` : ''}.</p>
     <h2>${esc(G.name).toUpperCase()}</h2>
     <p class="muted">${G.sex === 'f' ? 'Female' : 'Male'} ${esc(race().name)} ${esc(cls().name)}, former ${esc(job().name.toLowerCase())}. Level ${G.lvl} (${G.xp} / ${G.lvl * 20} XP)</p>
@@ -2050,13 +2117,13 @@ function fightOptions() {
   const w = G.equip.weapon && ITEMS[G.equip.weapon];
   const est = (n) => Math.max(1, Math.round(n));
   const n = Math.max(1, alive().length);
-  const free = [], mana = [];
+  const free = [], items = [], mana = [];
   free.push({ id: 'weapon', label: w ? 'Swing ' + w.name : 'Punch', type: w ? 'WEAPON' : 'PHYSICAL', info: 'Hits one mob.', dmg: est(heroAtk() + 1 - avgDef()), target: 'one' });
   free.push({ id: 'kick', label: 'Kick', type: 'PHYSICAL', info: 'Weaker, but stops a wind-up.', dmg: est((heroAtk() + 1) * 0.7 - avgDef()), target: 'one' });
   for (const id of G.order) {
     if (count(id) > 0 && ITEMS[id].type === 'bomb') {
       const mult = (G.race === 'gnome' ? 1.5 : 1) * (hasPerk('demo') ? 1.3 : 1);
-      free.push({ id: 'bomb:' + id, label: `${ITEMS[id].name} x${count(id)}`, type: 'BOMB', info: 'Hits every mob. Uses one up.', dmg: Math.round(ITEMS[id].dmg * mult), all: true, target: 'all' });
+      items.push({ id: 'bomb:' + id, label: `${ITEMS[id].name} x${count(id)}`, type: 'BOMB', info: 'Hits every mob. Uses one up.', dmg: Math.round(ITEMS[id].dmg * mult), all: true, target: 'all', item: true });
     }
   }
   const sk = cls().skill;
@@ -2068,8 +2135,9 @@ function fightOptions() {
   for (const m of G.moves) add('move:' + m, MOVES[m], 'SPELL', m);
   const total = (o) => (o.dmg || 0) * (o.all ? n : 1);
   free.sort((x, y) => total(y) - total(x));
+  items.sort((x, y) => total(y) - total(x));
   mana.sort((x, y) => total(y) - total(x));
-  return [...free, ...mana];
+  return [...free, ...items, ...mana];
 }
 function fightOptHtml(o) {
   const big = o.util != null && !o.dmg
@@ -2091,8 +2159,10 @@ function renderBattleControls() {
       <button class="btn grey" data-b="run" ${B.enemies.some((e) => e.boss) ? 'disabled' : ''}>RUN</button></div>`;
   } else if (B.phase === 'fight') {
     const opts = fightOptions();
-    const firstMana = opts.findIndex((o) => o.mp);
-    btns = `<div class="stack opts">${opts.map((o, i) => (i === firstMana ? `<div class="opt-head">MANA MOVES · you have ${G.mp} MP</div>` : '') + fightOptHtml(o)).join('')}</div><button class="btn grey" data-b="back">BACK</button>`;
+    // Three sections: melee (free), item moves that use something up, and mana moves.
+    const melee = opts.filter((o) => !o.mp && !o.item), itemMoves = opts.filter((o) => o.item), mana = opts.filter((o) => o.mp);
+    const sec = (head, list, empty) => `<div class="opt-head">${head}</div>` + (list.length ? list.map(fightOptHtml).join('') : `<p class="muted opt-empty">${empty}</p>`);
+    btns = `<div class="stack opts">${sec('MELEE · no mana', melee, '')}${sec('ITEM MOVES · uses one up', itemMoves, 'No bombs or throwables in your bag.')}${sec(`MANA MOVES · you have ${G.mp} MP`, mana, 'No mana moves yet.')}</div><button class="btn grey" data-b="back">BACK</button>`;
   } else if (B.phase === 'target') {
     btns = `<p class="muted" style="margin:0">Who gets the ${esc(B.pendingLabel)}?</p><div class="stack opts">${alive().map((e) => `<button class="btn red text" data-b="target" data-arg="${e.id}">${esc(e.full)} (${e.hp} HP)</button>`).join('')}</div><button class="btn grey" data-b="back">BACK</button>`;
   } else if (B.phase === 'items') {
@@ -2383,10 +2453,13 @@ async function enemyAct(e) {
   say(`${esc(e.full)} uses <b>${esc(name)}</b>!`);
   await fly({ x: eb.cx, y: eb.cy }, HERO_C, atk.proj, atk.color, e.intent === 'heavy' ? 480 : 380);
   if (G.race === 'fairy' && R.chance(0.15)) { popHero('MISS', '#4fd8e8'); say('You flutter out of the way!'); return; }
-  let dmg = e.atk + R.int(0, 2) - heroDef();
+  // Defense softens a hit (each point cuts a bit less) but never cancels it, so mobs stay a threat with good gear.
+  const raw = e.atk + R.int(0, 2);
+  let dmg = raw * 12 / (12 + Math.max(0, heroDef()));
   if (e.intent === 'heavy') dmg *= 1.6;
   dmg = Math.max(1, Math.round(dmg));
   G.hp -= dmg;
+  flashHp();
   FX.heroFlash = 12;
   burst(HERO_C.x, HERO_C.y, e.intent === 'heavy' ? 'boom' : 'star', atk.color);
   popHero('-' + dmg, '#ff5fa2');
@@ -2517,7 +2590,7 @@ function gainXp(n) {
 }
 
 function endBattleReturn() {
-  calmT = 0; regenAcc = 0; guideFrom = -1;
+  calmT = 0; regenAcc = 0; guideFrom = -1; spotted = null; spotGrace = 1.5;
   textbox.classList.remove('picking');
   if (B && B.fled) G.buff = null;
   mode = 'map';
@@ -2620,12 +2693,12 @@ function drawMap() {
   const mdt = Math.min(0.1, (now - (drawMap.last || now)) / 1000);
   drawMap.last = now;
   const camX = Math.round(clamp(heroDraw.x + 8 - 120, 0, Math.max(0, FL.w * 16 - 240)));
-  const camY = Math.round(clamp(heroDraw.y + 8 - 80, 0, Math.max(0, FL.h * 16 - 160)));
-  const x0 = Math.floor(camX / 16), y0 = Math.floor(camY / 16);
-  ctx.fillStyle = '#0a0712'; ctx.fillRect(0, 0, 240, 160);
-  for (let y = y0; y <= y0 + 11; y++) for (let x = x0; x <= x0 + 16; x++) drawTile(x, y, x * 16 - camX, y * 16 - camY);
+  const camY = Math.round(clamp(heroDraw.y + 8 - VH / 2, 0, Math.max(0, FL.h * 16 - VH)));
+  const x0 = Math.floor(camX / 16), y0 = Math.floor(camY / 16), rows = Math.ceil(VH / 16) + 1;
+  ctx.fillStyle = '#0a0712'; ctx.fillRect(0, 0, 240, VH);
+  for (let y = y0; y <= y0 + rows; y++) for (let x = x0; x <= x0 + 16; x++) drawTile(x, y, x * 16 - camX, y * 16 - camY);
   const bob = (frame >> 4) % 2;
-  const onScreen = (p) => p.x >= x0 - 1 && p.x <= x0 + 16 && p.y >= y0 - 1 && p.y <= y0 + 11;
+  const onScreen = (p) => p.x >= x0 - 1 && p.x <= x0 + 16 && p.y >= y0 - 1 && p.y <= y0 + rows;
   const draw = (img, x, y, dy = 0) => ctx.drawImage(img, Math.round(x - camX), Math.round(y - camY + dy));
   for (const c of FL.chests) if (onScreen(c) && !G.opened.includes(c.id) && seen(c.x, c.y)) draw(boxSprite(c.tier), c.x * 16, c.y * 16);
   for (const b of FL.benches) if (onScreen(b) && seen(b.x, b.y)) {
@@ -2659,6 +2732,7 @@ function drawMap() {
       const img = mobSprite(MOBS[lead.type].sprite, lead.traits);
       shadow(m.px - camX, m.py - camY);
       draw(m.faceLeft ? flipped(img) : img, m.px, m.py, moving ? -1 : ((frame >> 5) + m.id.length) % 2);
+      if (spotted && spotted.m === m) { const ex = Math.round(m.px - camX) + 6, ey = Math.round(m.py - camY) - 9; ctx.fillStyle = '#1a1426'; ctx.fillRect(ex - 1, ey - 1, 6, 10); ctx.fillStyle = '#ff5fa2'; ctx.fillRect(ex, ey, 4, 5); ctx.fillRect(ex, ey + 6, 4, 2); }
       if (m.elite) { ctx.fillStyle = '#f5c542'; ctx.fillRect(Math.round(m.px - camX) + 6, Math.round(m.py - camY) - 2, 4, 2); }
       if (m.members.length > 1) { ctx.fillStyle = '#1a1426'; ctx.fillRect(Math.round(m.px - camX) + 10, Math.round(m.py - camY), 7, 7); ctx.fillStyle = '#ff5fa2'; ctx.font = '7px monospace'; ctx.fillText('' + m.members.length, Math.round(m.px - camX) + 11, Math.round(m.py - camY) + 6); }
     } });
@@ -2801,10 +2875,14 @@ function loop(now) {
   ctx.imageSmoothingEnabled = false;
   // Play stats count walking and fighting, not pause menus or a hidden app.
   if (G && FL && !document.hidden && ((mode === 'map' && overlay.hidden) || mode === 'battle')) { statsAcc += dt; if (statsAcc >= 15) recordPlay(); }
+  if (G && G.potionCd > 0 && (mode === 'map' || mode === 'battle') && !document.hidden && !overlay.querySelector('.banner-paused')) {
+    const before = Math.ceil(G.potionCd);
+    G.potionCd = Math.max(0, G.potionCd - dt);
+    if (Math.ceil(G.potionCd) !== before) refreshPotionTimers();
+  }
   if (mode === 'map' && G && FL) {
     if (canAct()) {
       G.playTime += dt;
-      if (G.potionCd > 0) G.potionCd = Math.max(0, G.potionCd - dt);
       // Out-of-combat healing, like most action RPGs: waits 5 seconds after a fight, eases in, then heals
       // about 1 HP a second (1% of max HP a second once your max HP passes 100).
       calmT += dt;
@@ -2832,7 +2910,8 @@ function loop(now) {
       hudTick += dt;
       if (hudTick > 0.5) { hudTick = 0; updateHud(); }
       // Start the next step right as the current one finishes. Bumping a wall just turns you.
-      if (moveHeld && !walking(now) && now - lastStep > 60) { lastStep = now; tryStep(moveHeld); }
+      checkSpotted(dt);
+      if (moveHeld && !spotted && !walking(now) && now - lastStep > 60) { lastStep = now; tryStep(moveHeld); }
       else if (!moveHeld && !walking(now)) lastStep = 0;
     }
     if (mode === 'map') drawMap();
@@ -2852,7 +2931,7 @@ window.__longodds = { get guidePath() { return guidePath; }, get G() { return G;
 canvas.addEventListener('click', (e) => {
   if (mode !== 'map' || !canAct()) return;
   const r = canvas.getBoundingClientRect();
-  const x = ((e.clientX - r.left) * 240) / r.width, y = ((e.clientY - r.top) * 160) / r.height;
+  const x = ((e.clientX - r.left) * 240) / r.width, y = ((e.clientY - r.top) * canvas.height) / r.height;
   if (x >= 240 - 52 - 10 && y <= 34 + 10) openFullMap();
 });
 

@@ -241,15 +241,22 @@ textarea { width: 100%; font-family: var(--body); font-size: 18px; line-height: 
 .sheet-src .up { color: var(--green); } .sheet-src .down { color: #ff8a8a; }
 .foe .xpv { color: var(--gold); font-size: 12px; }
 
-/* Movement stick: as big as the screen allows next to the A/B column (up to 210px). */
-.stick { --sz: clamp(130px, min(100vw - 184px, 100dvh - 430px), 210px); width: var(--sz); height: var(--sz); flex: none; display: flex; align-items: center; justify-content: center; }
-.stick-ring { position: relative; width: calc(100% - 6px); height: calc(100% - 6px); border-radius: 50%; background: radial-gradient(circle, #2c2040 0%, var(--edge2) 70%); border: 4px solid var(--ink); box-shadow: inset 0 0 0 3px var(--edge); }
-.stick-ring .arw { position: absolute; color: var(--edge); font-size: 16px; line-height: 1; }
+/* Floating movement stick (map only): see-through, appears where you touch the lower game screen. */
+#fstick { display: none; position: absolute; left: 22%; top: 78%; width: 150px; height: 150px; margin: -75px 0 0 -75px; pointer-events: none; opacity: 0.35; transition: opacity 0.15s; z-index: 1; }
+#fstick.active { opacity: 0.75; transition: none; }
+#app.fullview #fstick { display: block; }
+.stick-ring { position: relative; width: 100%; height: 100%; border-radius: 50%; background: radial-gradient(circle, rgba(44,32,64,0.55) 0%, rgba(26,20,38,0.6) 70%); border: 3px solid rgba(232,220,192,0.7); box-sizing: border-box; }
+.stick-ring .arw { position: absolute; color: rgba(232,220,192,0.8); font-size: 15px; line-height: 1; }
 .stick-ring .u { top: 9px; left: 50%; transform: translateX(-50%); } .stick-ring .d { bottom: 9px; left: 50%; transform: translateX(-50%); }
 .stick-ring .l { left: 10px; top: 50%; transform: translateY(-50%); } .stick-ring .r { right: 10px; top: 50%; transform: translateY(-50%); }
 .stick-ring[data-dir=up] .u, .stick-ring[data-dir=down] .d, .stick-ring[data-dir=left] .l, .stick-ring[data-dir=right] .r { color: var(--cyan); }
-.knob { position: absolute; left: 50%; top: 50%; width: 42%; height: 42%; margin: -21% 0 0 -21%; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #8b84a3, #5a5373 60%, #3b2a4d); border: 3px solid var(--ink); box-shadow: 0 3px 0 #000; pointer-events: none; }
-/* The A/B column sits beside the stick, with Bag/Gear/Map/Pause as a 2x2 grid so nothing runs off the screen. */
-.pad-wrap .ab { flex: none; width: 146px; }
-.pad-wrap .small-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; }
-.pad-wrap .chip { height: 40px; padding: 0 6px; }
+.knob { position: absolute; left: 50%; top: 50%; width: 42%; height: 42%; margin: -21% 0 0 -21%; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #e8dcc0, #8b84a3 60%, #5a5373); border: 3px solid var(--ink); pointer-events: none; }
+
+/* Full-screen map: the game fills the space, messages float on top, a slim button bar at the bottom. */
+#app.fullview #stage { flex: 1 1 auto; min-height: 0; aspect-ratio: auto; touch-action: none; -webkit-user-select: none; user-select: none; }
+#app.fullview #textbox { position: absolute; left: 18px; right: 18px; z-index: 2; max-height: 84px; min-height: 0; padding: 5px 9px; font-size: 14px; background: rgba(232,220,192,0.86); border-width: 3px; box-shadow: none; }
+#app.fullview #controls { flex: none; padding-bottom: 0; }
+.map-bar { display: flex; gap: 6px; }
+.map-bar .chip { flex: 1; height: 38px; padding: 0 4px; font-size: 15px; }
+#hp-fill.hitflash, .bar.hit { animation: hpHit 0.5s steps(2) 1; }
+@keyframes hpHit { 0%, 100% { box-shadow: none; } 50% { box-shadow: 0 0 0 3px var(--red); background: #3a1020; } }
