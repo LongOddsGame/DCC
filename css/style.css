@@ -255,7 +255,8 @@ textarea { width: 100%; font-family: var(--body); font-size: 18px; line-height: 
 
 /* Full-screen map: the game fills the space, messages float on top, a slim button bar at the bottom. */
 #app.fullview #stage { flex: 1 1 auto; min-height: 0; aspect-ratio: auto; touch-action: none; -webkit-user-select: none; user-select: none; }
-#app.fullview #textbox { position: absolute; left: 18px; right: 18px; z-index: 2; max-height: 84px; min-height: 0; padding: 5px 9px; font-size: 14px; background: rgba(232,220,192,0.86); border-width: 3px; box-shadow: none; }
+#app.fullview #textbox { position: absolute; top: auto; left: 18px; right: 18px; z-index: 2; max-height: 64px; min-height: 0; padding: 4px 8px; font-size: 13px; line-height: 1.25; background: rgba(232,220,192,0.78); border-width: 2px; box-shadow: none; pointer-events: none; transition: opacity 0.6s; }
+#app.fullview #textbox.faded { opacity: 0; }
 #app.fullview #controls { flex: none; padding-bottom: 0; }
 .map-bar { display: flex; gap: 6px; }
 .map-bar .chip { flex: 1; height: 38px; padding: 0 4px; font-size: 15px; }
