@@ -93,7 +93,7 @@ export const RACES = [
 export const SCHOOL_NAMES = { poison: 'Poison', guard: 'Guard', ice: 'Ice', heal: 'Healing', blood: 'Blood', fire: 'Fire', storm: 'Storm' };
 export const CLASSES = [
   { id: 'brawler', name: 'Brawler', desc: 'Heavy hits and high health.', mods: { maxHp: 10, atk: 2 }, odds: 0, coat: '#c8334a', coatLight: '#ff8a8a', cannot: ['storm', 'ice'],
-    skill: { name: 'Haymaker', mp: 3, desc: 'A punch for double damage.', target: 'one', kind: 'double' } },
+    skill: { name: 'Haymaker', mp: 3, desc: 'A big punch for 1.5x damage.', target: 'one', kind: 'double' } },
   { id: 'hex', name: 'Hex-slinger', desc: 'Spells and curses.', mods: { maxMp: 10, mag: 3 }, odds: 2, coat: '#8a4fc9', coatLight: '#c49af0', cannot: ['heal'], magic: true,
     skill: { name: 'Hex Bolt', mp: 4, desc: 'Magic damage that ignores armor.', target: 'one', kind: 'bolt', color: '#c49af0' } },
   { id: 'scrapper', name: 'Scrapper', desc: 'Builds bombs from junk. Starts with 3 bombs.', mods: { luck: 2 }, odds: 2, coat: '#b8693a', coatLight: '#f5c542', cannot: ['heal', 'ice'],
@@ -103,7 +103,7 @@ export const CLASSES = [
   { id: 'showboat', name: 'Showboat', desc: 'Wins over the audience for bigger gifts.', mods: { spd: 1, cha: 3 }, odds: 3, coat: '#f5c542', coatLight: '#fff6e0', cannot: ['poison'], hypeUp: true,
     skill: { name: 'Showstopper', mp: 3, desc: 'A flashy hit worth 2 hype.', target: 'one', kind: 'flashy' } },
   { id: 'medic', name: 'Field Medic', desc: 'Keeps themself alive no matter what.', mods: { maxHp: 6, maxMp: 6, mag: 1 }, odds: 3, coat: '#e8dcc0', coatLight: '#fff6e0', cannot: ['blood', 'poison', 'fire'],
-    skill: { name: 'Patch Up', mp: 4, desc: 'Heal 20 HP plus 1.5 times your magic.', target: 'self', kind: 'heal' } },
+    skill: { name: 'Patch Up', mp: 4, desc: 'Heal 15 HP plus 1.2 times your magic.', target: 'self', kind: 'heal' } },
   { id: 'knight', name: 'Mall Knight', desc: 'Armor and shields. Hard to knock down.', mods: { def: 3, maxHp: 6, spd: -1 }, odds: 1, coat: '#8b84a3', coatLight: '#e8dcc0', cannot: ['poison', 'blood'],
     skill: { name: 'Shield Bash', mp: 4, desc: 'A hit that stuns one mob for a turn.', target: 'one', kind: 'stun' } },
   { id: 'rogue', name: 'Pickpocket', desc: 'Quick hands, quicker feet.', mods: { spd: 2, luck: 2, cha: 1 }, odds: 5, coat: '#2f7a3c', coatLight: '#6bbf59', cannot: ['heal', 'guard'],
@@ -113,7 +113,7 @@ export const CLASSES = [
   { id: 'frost', name: 'Frost Witch', desc: 'Cold spells that freeze mobs in place.', mods: { mag: 2, maxMp: 6 }, odds: 5, coat: '#4fd8e8', coatLight: '#e8dcc0', cannot: ['fire'], magic: true,
     skill: { name: 'Cold Shoulder', mp: 4, desc: 'Ice damage that freezes one mob.', target: 'one', kind: 'freeze' } },
   { id: 'vamp', name: 'Night Shift Vampire', desc: 'Drinks life from mobs. Hates daylight anyway.', mods: { atk: 1, mag: 2, maxHp: 4 }, odds: 7, coat: '#7a1c2e', coatLight: '#c8334a', cannot: ['heal', 'fire'],
-    skill: { name: 'Blood Siphon', mp: 4, desc: 'Damage one mob and heal all of it.', target: 'one', kind: 'drain' } },
+    skill: { name: 'Blood Siphon', mp: 4, desc: 'Damage one mob and heal some of it back.', target: 'one', kind: 'drain' } },
   { id: 'druid', name: 'Park Druid', desc: 'Weeds, thorns and nature that bites back.', mods: { mag: 2, maxHp: 4, luck: 1 }, odds: 4, coat: '#6bbf59', coatLight: '#b8e05a', cannot: ['fire', 'storm'], magic: true,
     skill: { name: 'Thornwhip', mp: 3, desc: 'Damage and poison one mob.', target: 'one', kind: 'poison' } },
   { id: 'monk', name: 'Yoga Monk', desc: 'Calm, centered, and very fast with their fists.', mods: { spd: 3, atk: 1 }, odds: 3, coat: '#f5c542', coatLight: '#ff8a3a', cannot: ['fire', 'poison', 'blood'],
@@ -123,9 +123,9 @@ export const CLASSES = [
   { id: 'berserk', name: 'Berserker', desc: 'All rage, no spells. Hits like a truck.', mods: { atk: 4, maxHp: 8, def: -2, cha: -2 }, odds: 2, coat: '#7a1c2e', coatLight: '#ff8a8a', cannot: ['heal', 'guard', 'ice', 'storm'],
     skill: { name: 'Rampage', mp: 4, desc: 'Hit every mob with your weapon.', target: 'all', kind: 'rampage' } },
   { id: 'sniper', name: 'Arcade Sniper', desc: 'Never misses. Won every prize at the fair.', mods: { luck: 3, spd: 1 }, odds: 4, coat: '#3a6ea5', coatLight: '#4fd8e8', cannot: ['heal'],
-    skill: { name: 'Headshot', mp: 5, desc: 'Triple damage that ignores armor.', target: 'one', kind: 'crit' } },
+    skill: { name: 'Headshot', mp: 6, desc: 'A 1.4x hit that ignores armor.', target: 'one', kind: 'crit' } },
   { id: 'warden', name: 'Bouncer Warden', desc: 'Stands in the door and does not move.', mods: { def: 2, maxHp: 12, spd: -1 }, odds: 1, coat: '#1a1426', coatLight: '#5a5373', cannot: ['fire', 'storm'],
-    skill: { name: 'Hunker Down', mp: 3, desc: '+6 defense this fight and heal 10.', target: 'self', kind: 'guard' } },
+    skill: { name: 'Hunker Down', mp: 3, desc: '+5 defense this fight and heal 8.', target: 'self', kind: 'guard' } },
   { id: 'trick', name: 'Trickster', desc: 'Smoke, mirrors and pocket sand.', mods: { spd: 2, luck: 2, cha: 1 }, odds: 6, coat: '#8a4fc9', coatLight: '#4fd8e8', cannot: ['blood'],
     skill: { name: 'Pocket Sand', mp: 4, desc: 'Every mob has a 60% chance to lose its next turn.', target: 'all', kind: 'blind' } },
   { id: 'necro', name: 'Basement Necromancer', desc: 'Curses and creepy whispers.', mods: { mag: 3, maxMp: 6, cha: -2 }, odds: 7, coat: '#1a1426', coatLight: '#8a4fc9', cannot: ['heal'], magic: true,
@@ -140,7 +140,7 @@ export const CLASSES = [
   { id: 'janitor', name: 'Night Janitor', desc: 'Has seen things in this building. Wet floors are a weapon.', mods: { def: 1, maxHp: 6, luck: 1 }, odds: 5, coat: '#5a5373', coatLight: '#4fd8e8', cannot: ['fire'],
     skill: { name: 'Mop Slick', mp: 4, desc: 'Every mob has a 60% chance to slip and lose its next turn.', target: 'all', kind: 'blind' } },
   { id: 'lifeguard', name: 'Off-Duty Lifeguard', desc: 'Strong swimmer, stronger whistle.', mods: { maxHp: 8, spd: 1, maxMp: 2 }, odds: 3, coat: '#c8334a', coatLight: '#f5c542', cannot: ['fire', 'blood'],
-    skill: { name: 'Rescue Breath', mp: 4, desc: 'Heal 20 HP plus 1.5 times your magic.', target: 'self', kind: 'heal' } },
+    skill: { name: 'Rescue Breath', mp: 4, desc: 'Heal 15 HP plus 1.2 times your magic.', target: 'self', kind: 'heal' } },
   { id: 'plumber', name: 'Emergency Plumber', desc: 'On call 24/7. Carries a very large wrench.', mods: { atk: 2, def: 1, maxHp: 4 }, odds: 3, coat: '#3a6ea5', coatLight: '#8b84a3', cannot: ['fire', 'storm'],
     skill: { name: 'Wrench Whack', mp: 4, desc: 'A hit that stuns one mob for a turn.', target: 'one', kind: 'stun' } },
   { id: 'dj', name: 'Club DJ', desc: 'Reads the room. Drops the beat at the perfect moment.', mods: { cha: 3, spd: 1, maxMp: 3 }, odds: 5, coat: '#1a1426', coatLight: '#ff5fa2', cannot: ['ice', 'blood'], hypeUp: true,
@@ -158,20 +158,24 @@ export const CLASSES = [
   { id: 'collector', name: 'Debt Collector', desc: 'Everyone owes you something. Penny gives you a discount.', mods: { atk: 1, luck: 2, cha: 1 }, odds: 4, coat: '#1a1426', coatLight: '#f5c542', cannot: ['heal'], haggle: true,
     skill: { name: 'Collections', mp: 3, desc: 'A sneaky hit that also steals tokens.', target: 'one', kind: 'steal' } },
   { id: 'tackle', name: 'Retired Linebacker', desc: 'Bad knees. Great shoulders.', mods: { maxHp: 12, atk: 2, spd: -1 }, odds: 1, coat: '#2f7a3c', coatLight: '#fff6e0', cannot: ['ice', 'storm', 'poison'],
-    skill: { name: 'Blindside', mp: 3, desc: 'A tackle for double damage.', target: 'one', kind: 'double' } },
+    skill: { name: 'Blindside', mp: 3, desc: 'A tackle for 1.5x damage.', target: 'one', kind: 'double' } },
   { id: 'influencer', name: 'Influencer', desc: 'Lives for the camera. The Patrons eat it up.', mods: { cha: 4, spd: 1 }, odds: 6, coat: '#ff5fa2', coatLight: '#fff6e0', cannot: ['blood', 'guard'], hypeUp: true,
     skill: { name: 'Go Viral', mp: 3, desc: 'A flashy hit worth 2 hype.', target: 'one', kind: 'flashy' } },
   { id: 'lumber', name: 'Lumberjack', desc: 'Swings big, swings wide, yells TIMBER.', mods: { atk: 3, maxHp: 10, mag: -1 }, odds: 2, coat: '#c8334a', coatLight: '#1a1426', cannot: ['heal', 'storm'],
     skill: { name: 'Timber!', mp: 4, desc: 'Hit every mob with your weapon.', target: 'all', kind: 'rampage' } },
   { id: 'dentist', name: 'Strip Mall Dentist', desc: 'Steady hands. Finds the soft spot every time.', mods: { luck: 2, mag: 1, atk: 1 }, odds: 4, coat: '#e8dcc0', coatLight: '#4fd8e8', cannot: ['blood'],
-    skill: { name: 'Root Canal', mp: 5, desc: 'Triple damage that ignores armor.', target: 'one', kind: 'crit' } },
+    skill: { name: 'Root Canal', mp: 6, desc: 'A 1.4x hit that ignores armor.', target: 'one', kind: 'crit' } },
   { id: 'derby', name: 'Roller Derby Jammer', desc: 'Elbows out. Wheels down.', mods: { spd: 2, atk: 1, maxHp: 4 }, odds: 3, coat: '#8a4fc9', coatLight: '#ff5fa2', cannot: ['heal', 'ice'],
     skill: { name: 'Pileup', mp: 4, desc: 'Crash into every mob at once.', target: 'all', kind: 'shrapnel' } },
   { id: 'mallcop', name: 'Mall Cop', desc: 'Has a badge. It is plastic. Takes it very seriously.', mods: { def: 2, maxHp: 8, cha: 1 }, odds: 2, coat: '#3a6ea5', coatLight: '#e8dcc0', cannot: ['fire', 'poison'],
-    skill: { name: 'Hold the Line', mp: 3, desc: '+6 defense this fight and heal 10.', target: 'self', kind: 'guard' } },
+    skill: { name: 'Hold the Line', mp: 3, desc: '+5 defense this fight and heal 8.', target: 'self', kind: 'guard' } },
   { id: 'ghost', name: 'Ghost Hunter', desc: 'Owns a vacuum for spirits. It also works on mobs.', mods: { mag: 3, luck: 1, maxMp: 3 }, odds: 6, coat: '#5a5373', coatLight: '#6bbf59', cannot: ['heal', 'fire'], magic: true,
-    skill: { name: 'Spirit Vacuum', mp: 4, desc: 'Damage one mob and heal all of it.', target: 'one', kind: 'drain' } },
+    skill: { name: 'Spirit Vacuum', mp: 4, desc: 'Damage one mob and heal some of it back.', target: 'one', kind: 'drain' } },
 ];
+// Class move costs, set by what the move does so every class pays the same for the same power (balance pass 1.0.22).
+const KIND_MP = { double: 4, bolt: 4, flashy: 3, shrapnel: 5, talk: 3, heal: 4, stun: 4, steal: 3, burst: 5, freeze: 4, drain: 4, poison: 4, multi: 4, song: 3, rampage: 5, crit: 5, guard: 3, blind: 4, curse: 4 };
+for (const c of CLASSES) if (KIND_MP[c.skill.kind]) c.skill.mp = KIND_MP[c.skill.kind];
+
 
 export const RARITY = {
   common: { name: 'Common', color: '#c9c3da' },
@@ -290,6 +294,10 @@ export const MOBS = {
   rat: { name: 'Platform Rat', sprite: 'rat', hp: 10, atk: 5, def: 0, spd: 7, xp: 5, tokens: [1, 3], drops: ['j_tail', 'j_token'] },
   gremlin: { name: 'Ticket Gremlin', sprite: 'gremlin', hp: 16, atk: 6, def: 2, spd: 5, xp: 8, tokens: [2, 6], drops: ['j_token', 'j_wire', 'potion_heal'] },
   pigeon: { name: 'Feral Pigeon', sprite: 'pigeon', hp: 8, atk: 3, def: 0, spd: 9, xp: 4, tokens: [0, 3], drops: ['j_feather', 'food_pretzel'] },
+  roach: { name: 'Third Rail Roach', sprite: 'roach', hp: 10, atk: 4, def: 2, spd: 8, xp: 5, tokens: [0, 3], drops: ['j_wire', 'j_token'] },
+  bat: { name: 'Tunnel Bat', sprite: 'bat', hp: 9, atk: 5, def: 0, spd: 10, xp: 5, tokens: [0, 3], drops: ['j_feather', 'j_tail'] },
+  mannequin: { name: 'Lost Mannequin', sprite: 'mannequin', hp: 20, atk: 5, def: 3, spd: 2, xp: 9, tokens: [2, 5], drops: ['j_wire', 'j_scrap'] },
+  trashcan: { name: 'Trash Can Mimic', sprite: 'trashcan', hp: 18, atk: 6, def: 3, spd: 4, xp: 9, tokens: [2, 6], drops: ['j_scrap', 'j_token', 'j_jelly'] },
 };
 export const BOSSES = {
   king: { name: 'The Turnstile King', sprite: 'king', hp: 95, atk: 9, def: 3, spd: 4, xp: 60, tokens: [30, 45], intro: '"No ticket? No exit. No mercy."', announce: 'Ladies, gentlemen and billionaires: THE TURNSTILE KING!' },
@@ -302,6 +310,10 @@ export const ATTACKS = {
   rat: { name: 'Bone Toss', heavy: 'Gnawed Femur Fling', proj: 'bone', color: '#e8dcc0' },
   gremlin: { name: 'Ticket Barrage', heavy: 'Fine Notice Flurry', proj: 'tickets', color: '#f5c542' },
   pigeon: { name: 'Dive Bomb', heavy: 'Airborne Droppings', proj: 'blob', color: '#fff6e0' },
+  roach: { name: 'Antenna Whip', heavy: 'Sparking Scuttle', proj: 'bone', color: '#8a4b2a' },
+  bat: { name: 'Screech', heavy: 'Fang Dive', proj: 'blob', color: '#8a4fc9' },
+  mannequin: { name: 'Plastic Slap', heavy: 'Limb Toss', proj: 'bone', color: '#e8dcc0' },
+  trashcan: { name: 'Garbage Spew', heavy: 'Lid Slam', proj: 'junk', color: '#8b84a3' },
   king: { name: 'Fare Card Fling', heavy: 'Turnstile Spin', proj: 'bar', color: '#8b84a3' },
   hoarder: { name: 'Junk Avalanche', heavy: 'Umbrella Storm', proj: 'junk', color: '#b8693a' },
 };
@@ -311,7 +323,7 @@ export const MOVES = {
   venom: { school: 'poison', name: 'Venom Dart', mp: 3, target: 'one', desc: 'Poisons one mob for 3 turns.' },
   iron: { school: 'guard', name: 'Iron Skin', mp: 4, target: 'self', desc: '+4 defense for the rest of the fight.' },
   frost: { school: 'ice', name: 'Frost Snap', mp: 4, target: 'one', desc: 'Ice damage. The mob skips its next turn.' },
-  mend: { school: 'heal', name: 'Mend', mp: 5, target: 'self', desc: 'Heal 30 HP plus your magic.' },
+  mend: { school: 'heal', name: 'Mend', mp: 5, target: 'self', desc: 'Heal 25 HP plus your magic.' },
   leech: { school: 'blood', name: 'Life Leech', mp: 5, target: 'one', desc: 'Damage a mob and heal half of it.' },
   fireball: { school: 'fire', name: 'Fireball', mp: 6, target: 'all', desc: 'Fire hits every mob.' },
   lightning: { school: 'storm', name: 'Chain Lightning', mp: 8, target: 'all', desc: 'A huge shock to every mob.' },
