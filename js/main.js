@@ -85,6 +85,10 @@ function renderLog() {
   const recent = logLines.slice(-3);
   textbox.innerHTML = recent.map((l, i) => `<p class="${l.cls} ${i < recent.length - 2 ? 'old' : ''}">${l.html}</p>`).join('');
   textbox.scrollTop = textbox.scrollHeight;
+  // On the full-screen map, messages fade away after 6 seconds so they don't cover the dungeon.
+  textbox.classList.remove('faded');
+  clearTimeout(renderLog.t);
+  renderLog.t = setTimeout(() => textbox.classList.add('faded'), 6000);
 }
 function clearLog() { logLines = []; renderLog(); }
 
@@ -387,7 +391,7 @@ const overlayHandlers = {
 // ---------- Character creation ----------
 let cr = null;
 const CREATE_STEPS = ['who', 'job', 'intro', 'race', 'class', 'confirm'];
-// Every new save rolls 8 old jobs (each with 4 random enhancements) and 8 classes to pick from.
+// Every new save rolls 8 old jobs (each with 4 random enhancements) and 8 classes (from 39) to pick from.
 function rollJobOffers() {
   const all = Object.keys(PERKS);
   return R.shuffle(JOBS).slice(0, 8).map((j) => {
@@ -396,8 +400,17 @@ function rollJobOffers() {
     return { job: j.id, perks: R.shuffle([...own, ...extra]) };
   });
 }
+// Pick 8 classes at random, avoiding the ones offered last time so each new run feels different.
+function rollClassOffers() {
+  let last = [];
+  try { last = JSON.parse(localStorage.getItem('lo_lastClasses') || '[]'); } catch { /* storage blocked */ }
+  const fresh = R.shuffle(CLASSES.filter((c) => !last.includes(c.id)));
+  const pick = [...fresh, ...R.shuffle(CLASSES.filter((c) => last.includes(c.id)))].slice(0, 8).map((c) => c.id);
+  try { localStorage.setItem('lo_lastClasses', JSON.stringify(pick)); } catch { /* storage blocked */ }
+  return pick;
+}
 function startCreate(slot) {
-  const classes = R.shuffle(CLASSES).slice(0, 8).map((c) => c.id);
+  const classes = rollClassOffers();
   cr = { slot, step: 'who', name: '', sex: 'm', offers: rollJobOffers(), job: null, perks: [], race: 'human', classes, cls: classes[0] };
   renderCreate();
 }
@@ -1455,9 +1468,10 @@ function fitView() {
   if (full) {
     const w = stageEl.clientWidth || 240, h = stageEl.clientHeight || 160;
     want = clamp(Math.round((240 * h) / w), 160, 520);
-    // Messages sit just under the mini map (drawn 40 game pixels tall in the top right).
-    textbox.style.top = (stageEl.offsetTop + stageEl.clientTop + Math.ceil((40 * w) / 240) + 4) + 'px';
-  } else textbox.style.top = '';
+    // Messages sit along the bottom of the game screen, below you, and fade out after a few seconds.
+    const app = $('app');
+    textbox.style.bottom = (app.clientHeight - (stageEl.offsetTop + stageEl.offsetHeight) + stageEl.clientTop + 6) + 'px';
+  } else textbox.style.bottom = '';
   if (canvas.height !== want) { canvas.height = want; ctx.imageSmoothingEnabled = false; }
   VH = want;
 }
@@ -2775,8 +2789,9 @@ function drawMap() {
   } else { heroDraw.x = G.pos.x * 16; heroDraw.y = G.pos.y * 16; }
   const mdt = Math.min(0.1, (now - (drawMap.last || now)) / 1000);
   drawMap.last = now;
-  const camX = Math.round(clamp(heroDraw.x + 8 - 120, 0, Math.max(0, FL.w * 16 - 240)));
-  const camY = Math.round(clamp(heroDraw.y + 8 - VH / 2, 0, Math.max(0, FL.h * 16 - VH)));
+  // The camera always keeps you in the middle of the screen, even at the edge of the floor.
+  const camX = Math.round(heroDraw.x + 8 - 120);
+  const camY = Math.round(heroDraw.y + 8 - VH / 2);
   const x0 = Math.floor(camX / 16), y0 = Math.floor(camY / 16), rows = Math.ceil(VH / 16) + 1;
   ctx.fillStyle = '#0a0712'; ctx.fillRect(0, 0, 240, VH);
   for (let y = y0; y <= y0 + rows; y++) for (let x = x0; x <= x0 + 16; x++) drawTile(x, y, x * 16 - camX, y * 16 - camY);
