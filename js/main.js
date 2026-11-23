@@ -2309,7 +2309,7 @@ function openSheet(from = 'menu') {
     <h3 class="sub">MOVES</h3>
     <p style="font-size:15px"><b style="color:var(--gold)">${esc(c.skill.name)}</b> (${moveMp('class', c.skill)} MP): ${esc(c.skill.desc)} <span style="color:var(--cyan)">${esc(moveLvlNote('class'))}</span></p>
     ${G.moves.map((m) => `<p style="font-size:15px"><b style="color:var(--gold)">${esc(MOVES[m].name)}</b> (${moveMp(m, MOVES[m])} MP): ${esc(MOVES[m].desc)} <span style="color:var(--cyan)">${esc(moveLvlNote(m))}</span></p>`).join('')}
-    <p class="muted" style="font-size:14px">Moves level up the more you use them: +10% power per level, and 1 less MP at Lv 3 and Lv 5.</p>
+    <p class="muted" style="font-size:14px">Moves level up the more you use them, with no max level. Each level needs more uses than the last. +10% power per level up to Lv 5, then +5% per level, and the MP cost drops now and then (never below half).</p>
     <p style="font-size:14px;color:#ff8a8a">${esc(cannotText(c))}</p>
     <p class="muted" style="font-size:14px">Every level gives +6 HP, +3 MP, +1 STR, +1 INT, and +1 DEF every other level. Gear, enhancements, race and class add the rest.</p>
     <button class="btn grey" data-act="sheetback" style="position:sticky; bottom:0">BACK</button>`);
@@ -2652,16 +2652,19 @@ async function doPlayer(action, targetId) {
   await enemyTurn();
 }
 
-// Move levels (owner request): every use of a mana move earns that move 1 XP. Each level adds 10% power,
-// and levels 3 and 5 also cut the mana cost by 1. Max level 5.
-const MOVE_XP = [0, 6, 16, 32, 55];
+// Move levels (owner request): every use of a mana move earns that move 1 XP, with no max level.
+// Uses needed keep growing: Lv 2 at 6 uses, Lv 3 at 18, Lv 4 at 36, Lv 5 at 60, then 90, 126, 168...
+// Power: +10% per level up to Lv 5, then +5% per level. MP: 1 less at Lv 3, Lv 5 and every 5 levels
+// after that, but never below half the move's base cost.
+function moveNeed(l) { return 3 * (l - 1) * l; } // total uses to reach level l
 function moveXp(id) { return (G.moveXp && G.moveXp[id]) || 0; }
-function moveLvl(id) { const x = moveXp(id); let l = 0; for (const t of MOVE_XP) if (x >= t) l++; return l; }
-function movePow(id) { return 1 + (moveLvl(id) - 1) * 0.1; }
-function moveMp(id, def) { const l = moveLvl(id); return Math.max(1, def.mp - (l >= 3 ? 1 : 0) - (l >= 5 ? 1 : 0)); }
+function moveLvl(id) { const x = moveXp(id); let l = 1; while (x >= moveNeed(l + 1)) l++; return l; }
+function movePow(id) { const l = moveLvl(id); return 1 + Math.min(l - 1, 4) * 0.1 + Math.max(0, l - 5) * 0.05; }
+function mpCut(l) { return (l >= 3 ? 1 : 0) + (l >= 5 ? 1 : 0) + Math.max(0, Math.floor((l - 5) / 5)); }
+function moveMp(id, def) { return Math.max(1, Math.ceil(def.mp / 2), def.mp - mpCut(moveLvl(id))); }
 function moveLvlNote(id) {
-  const l = moveLvl(id);
-  return l >= MOVE_XP.length ? `Lv ${l} (max)` : `Lv ${l} · ${MOVE_XP[l] - moveXp(id)} more use${MOVE_XP[l] - moveXp(id) > 1 ? 's' : ''} to Lv ${l + 1}`;
+  const l = moveLvl(id), left = moveNeed(l + 1) - moveXp(id);
+  return `Lv ${l} · ${left} more use${left > 1 ? 's' : ''} to Lv ${l + 1}`;
 }
 function gainMoveXp(id, def) {
   const before = moveLvl(id);
@@ -2670,7 +2673,7 @@ function gainMoveXp(id, def) {
   const l = moveLvl(id);
   if (l > before) {
     if (B) popHero('MOVE LV ' + l + '!', '#4fd8e8');
-    say(`<span class="good"><b>${esc(def.name)}</b> grew to Lv ${l}!</span> +10% power${l === 3 || l === 5 ? ' and costs 1 less MP' : ''}.`);
+    say(`<span class="good"><b>${esc(def.name)}</b> grew to Lv ${l}!</span> +${l <= 5 ? 10 : 5}% power${mpCut(l) > mpCut(l - 1) ? ' and costs 1 less MP' : ''}.`);
     bookie(R.pick(['Practice makes perfect. Or at least more painful.', 'That move is getting a fan club.', 'Look at that. The crawler is learning.']));
   }
 }
