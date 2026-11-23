@@ -3,7 +3,7 @@ import { R, makeRng, newSeed } from './rng.js?v=__BUILD_VERSION__';
 import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, GEAR_TYPES, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, RECIPES, SCHOOL_NAMES } from './data.js?v=__BUILD_VERSION__';
 import { generateFloor, tutorialFloor, roomAt, makeGroup, walkable, tileAt, stageAt, T, key } from './dungeon.js?v=__BUILD_VERSION__';
 import { sprite, heroSprite, flipped, docSprite, boxSprite, mobSprite, itemIcon, slotIcon } from './sprites.js?v=__BUILD_VERSION__';
-import { SLOT_COUNT, readSlot, writeSlot, deleteSlot, listSlots } from './save.js?v=__BUILD_VERSION__';
+import { SLOT_COUNT, readSlot, writeSlot, deleteSlot, listSlots, exportCode, importCode } from './save.js?v=__BUILD_VERSION__';
 import { VERSION, checkForUpdate, installUpdate } from './version.js?v=__BUILD_VERSION__';
 import { SUGGEST_KEY, COUNTER_CODE } from './config.js?v=__BUILD_VERSION__';
 import { trackPlay, flushStats, statsOn, setStatsOn, playerName, setPlayerName } from './stats.js?v=__BUILD_VERSION__';
@@ -376,6 +376,7 @@ function showTitle() {
     <div class="stack">${rows}</div>
     <div class="foot">${upd}
       <span class="muted" style="font-size:14px; min-height:18px">${esc(titleState.updateMsg)}</span>
+      <button class="btn" data-act="transfer">MOVE A SAVE TO ANOTHER DEVICE</button>
       ${sugBtn}
       <button class="btn grey" data-act="settings">SETTINGS</button>
       <span class="muted" style="font-size:13px; text-align:center">${statsOn() ? 'Play stats (hero names, progress and play time) and an anonymous visit count are sent to the developer. You can turn this off in Settings.' : 'Play stats are off.'}</span>
@@ -413,7 +414,56 @@ const overlayHandlers = {
     if (mode === 'title') showTitle();
   },
   install: () => installUpdate(titleState.update),
+  transfer: async () => {
+    // Codes are made up front so the Copy tap can write to the clipboard right away (iPhone needs that).
+    xfer = { code: '', from: -1, msg: '', codes: [] };
+    showTransfer();
+    for (let i = 0; i < SLOT_COUNT; i++) { try { xfer.codes[i] = await exportCode(i); } catch { xfer.codes[i] = null; } }
+  },
+  xfercopy: async (i) => {
+    let code = xfer.codes && xfer.codes[i];
+    if (!code) { try { code = await exportCode(i); } catch { code = null; } }
+    if (!code) { xfer.msg = 'Could not make a code on this device.'; return showTransfer(); }
+    xfer.code = code; xfer.from = i;
+    try { await navigator.clipboard.writeText(code); xfer.msg = 'Code copied! On your other device, open Move a save and paste it under Load on this device.'; }
+    catch { xfer.msg = 'Copy the code in the box below and paste it on your other device.'; }
+    showTransfer();
+  },
+  xferload: async () => {
+    const box = $('xfer-in'), code = box ? box.value : '';
+    const slot = listSlots().findIndex((x) => !x);
+    if (slot < 0) { xfer.msg = 'All save slots are full. Delete one first, then load the code.'; return showTransfer(code); }
+    try {
+      const data = await importCode(code);
+      data.slot = slot;
+      if (!writeSlot(slot, data)) throw new Error('Could not save on this device. Storage might be full or blocked.');
+      xfer = { code: '', from: -1, msg: '', codes: [] };
+      titleState.updateMsg = `${data.name} was loaded into slot ${slot + 1}.`;
+      showTitle();
+    } catch (err) { xfer.msg = (err && err.message) || 'That code did not work.'; showTransfer(code); }
+  },
+  xferback: () => showTitle(),
 };
+
+// Move a save between devices with a copy and paste code (no account or server needed).
+let xfer = { code: '', from: -1, msg: '', codes: [] };
+function showTransfer(pasted = '') {
+  const slots = listSlots();
+  const rows = slots.map((s, i) => s ? `<div class="item"><div class="txt"><span class="nm">${i + 1}. ${esc(s.name)}</span><span class="ds">${s.floor === 0 ? 'Tutorial' : 'Floor ' + s.floor} · Level ${s.lvl}</span></div><button class="act" data-act="xfercopy" data-i="${i}">Copy code</button></div>` : '').join('') || '<p class="muted">No saves on this device yet.</p>';
+  const free = slots.filter((x) => !x).length;
+  showOverlay(`
+    <h2>MOVE A SAVE</h2>
+    ${xfer.msg ? `<p class="note">${esc(xfer.msg)}</p>` : ''}
+    <h3 class="sub">SEND FROM THIS DEVICE</h3>
+    <p class="muted" style="font-size:14px; margin:0">Tap Copy code on a hero, then paste the code on your other device. Your hero stays here too.</p>
+    <div class="items">${rows}</div>
+    ${xfer.code ? `<textarea class="xfer-code" readonly rows="4" onfocus="this.select()">${esc(xfer.code)}</textarea>` : ''}
+    <h3 class="sub">LOAD ON THIS DEVICE</h3>
+    <p class="muted" style="font-size:14px; margin:0">Paste a code from your other device. It goes into the first empty slot (${free} free).</p>
+    <textarea id="xfer-in" class="xfer-code" rows="4" placeholder="Paste a code here" autocomplete="off" autocapitalize="off" spellcheck="false">${esc(pasted)}</textarea>
+    <button class="btn gold" data-act="xferload">LOAD CODE</button>
+    <button class="btn grey" data-act="xferback" style="position:sticky; bottom:0">BACK</button>`);
+}
 
 // ---------- Character creation ----------
 let cr = null;
