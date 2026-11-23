@@ -1,7 +1,7 @@
 // Builds a big random floor from a seed: a grid of rooms joined by paths, many safe rooms,
 // chests, mob groups that get tougher the farther you go, and two boss rooms.
 import { makeRng } from './rng.js?v=__BUILD_VERSION__';
-import { MOBS, TRAITS, FLOOR_RULES } from './data.js?v=__BUILD_VERSION__';
+import { TRAITS, FLOOR_RULES, floorDef } from './data.js?v=__BUILD_VERSION__';
 
 export const T = { WALL: 0, FLOOR: 1, SAFE: 2, STAIRS: 3 };
 export const STAGES = 4;        // each floor is split into stages joined by locked gates
@@ -110,9 +110,10 @@ export function generateFloor(seed, floor, opts = {}) {
   const boss2Room = lastRooms.filter((r) => r !== bossRoom).sort((a, b) => score2(b) - score2(a))[0];
   const stairs = { x: bossRoom.x + bossRoom.w - 2, y: bossRoom.cy };
   set(stairs.x, stairs.y, T.STAIRS);
+  const fd = floorDef(floor);
   const bosses = [
-    { id: 'b1', type: 'king', x: stairs.x - 1, y: stairs.y },
-    { id: 'b2', type: 'hoarder', x: boss2Room.cx, y: boss2Room.cy },
+    { id: 'b1', type: fd.bosses[0], x: stairs.x - 1, y: stairs.y },
+    { id: 'b2', type: fd.bosses[1], x: boss2Room.cx, y: boss2Room.cy },
   ];
 
   // Safe rooms: two per stage (owner request). One near the start of the stage, and one deeper in.
@@ -158,10 +159,11 @@ export function generateFloor(seed, floor, opts = {}) {
     }
     return null;
   };
-  const types = Object.keys(MOBS);
+  const types = fd.mobs.slice();
   const traitIds = Object.keys(TRAITS);
   // Depth goes from 0 at the start to 1 at the bosses, stage by stage.
   const depthOf = (r) => Math.min(1, (r.stage + Math.min(1, (r.col + 0.5) / SCOLS)) / STAGES);
+  for (const r of rooms) r.depth = depthOf(r); // respawned mobs use their room's depth too
 
   // Gatekeepers stand right in front of each gate.
   const mobs = [];
@@ -179,13 +181,13 @@ export function generateFloor(seed, floor, opts = {}) {
   const chests = [];
   let ci = 0;
   for (const r of fightRooms) {
-    if (!rng.chance(0.35)) continue;
+    if (!rng.chance(0.25)) continue; // fewer, better chests (owner: too many leftover boxes)
     const p = freeSpot(r);
     if (!p) continue;
     const depth = depthOf(r);
     let tier = 'box_rusty';
-    if (rng.chance(0.03 + depth * 0.15)) tier = 'box_gold';
-    else if (rng.chance(0.12 + depth * 0.35)) tier = 'box_silver';
+    if (rng.chance(0.04 + depth * 0.18)) tier = 'box_gold';
+    else if (rng.chance(0.15 + depth * 0.4)) tier = 'box_silver';
     chests.push({ id: 'c' + ci++, x: p.x, y: p.y, tier });
   }
   if (opts.extraChest) {
@@ -211,8 +213,8 @@ export function generateFloor(seed, floor, opts = {}) {
   const decor = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) if (tiles[i] === T.FLOOR && rng.chance(0.03)) decor[i] = rng.int(1, 3);
 
-  const rule = rng.pick(FLOOR_RULES);
-  return { w: W, h: H, tiles, decor, rooms, stages, gates, start: { x: start.cx, y: start.cy }, stairs, bosses, doc, booths, benches, shops, beds, safeRoom, safeRooms, chests, mobs, rule, far, dist };
+  const rule = rng.pick(FLOOR_RULES.filter((x) => fd.rules.includes(x.id)));
+  return { floor, mobTypes: types, w: W, h: H, tiles, decor, rooms, stages, gates, start: { x: start.cx, y: start.cy }, stairs, bosses, doc, booths, benches, shops, beds, safeRoom, safeRooms, chests, mobs, rule, far, dist };
 }
 
 // Which stage (0 to 3) a tile is in.
