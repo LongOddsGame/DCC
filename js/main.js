@@ -1352,6 +1352,9 @@ function enterMap(fresh) {
 function renderControls() {
   if (prompt) {
     controls.innerHTML = `<div class="stack opts">${prompt.choices.map((c, i) => `<button class="btn ${c.color || ''} text" data-p="${i}" ${c.disabled ? 'disabled' : ''}>${esc(c.label)}</button>`).join('')}</div>`;
+    // Re-fit the view so the message log moves out from over the choice buttons.
+    fitView();
+    textbox.scrollTop = textbox.scrollHeight;
     return;
   }
   if (mode === 'map') {
@@ -2208,7 +2211,10 @@ function openSheet(from = 'menu') {
       <span style="font-size:14px;color:var(--cyan)">Level ${G.lvl} · ${G.xp} / ${xpNeed(G.lvl)} XP</span></div></div>
     <h2>CHARACTER SHEET</h2>
     <div class="sheet">${rows}</div>
-    <p style="font-size:15px"><b style="color:var(--gold)">${esc(c.skill.name)}</b> (${c.skill.mp} MP): ${esc(c.skill.desc)}</p>
+    <h3 class="sub">MOVES</h3>
+    <p style="font-size:15px"><b style="color:var(--gold)">${esc(c.skill.name)}</b> (${moveMp('class', c.skill)} MP): ${esc(c.skill.desc)} <span style="color:var(--cyan)">${esc(moveLvlNote('class'))}</span></p>
+    ${G.moves.map((m) => `<p style="font-size:15px"><b style="color:var(--gold)">${esc(MOVES[m].name)}</b> (${moveMp(m, MOVES[m])} MP): ${esc(MOVES[m].desc)} <span style="color:var(--cyan)">${esc(moveLvlNote(m))}</span></p>`).join('')}
+    <p class="muted" style="font-size:14px">Moves level up the more you use them: +10% power per level, and 1 less MP at Lv 3 and Lv 5.</p>
     <p style="font-size:14px;color:#ff8a8a">${esc(cannotText(c))}</p>
     <p class="muted" style="font-size:14px">Every level gives +6 HP, +3 MP, +1 STR, +1 INT, and +1 DEF every other level. Gear, enhancements, race and class add the rest.</p>
     <button class="btn grey" data-act="sheetback" style="position:sticky; bottom:0">BACK</button>`);
@@ -2343,12 +2349,12 @@ function fightOptions() {
     }
   }
   const sk = cls().skill;
-  const add = (id, def, type, kind) => {
-    const e = moveEstimate(kind);
-    mana.push({ id, label: def.name, type, info: def.desc, target: def.target, mp: def.mp, dmg: e.dmg || 0, all: e.all, util: e.util });
+  const add = (id, mid, def, type, kind) => {
+    const e = moveEstimate(kind), l = moveLvl(mid);
+    mana.push({ id, label: def.name + (l > 1 ? ' Lv' + l : ''), type, info: def.desc + ' ' + moveLvlNote(mid) + '.', target: def.target, mp: moveMp(mid, def), dmg: e.dmg ? Math.round(e.dmg * movePow(mid)) : 0, all: e.all, util: e.util });
   };
-  add('move:class', sk, 'CLASS', sk.kind);
-  for (const m of G.moves) add('move:' + m, MOVES[m], 'SPELL', m);
+  add('move:class', 'class', sk, 'CLASS', sk.kind);
+  for (const m of G.moves) add('move:' + m, m, MOVES[m], 'SPELL', m);
   const total = (o) => (o.dmg || 0) * (o.all ? n : 1);
   free.sort((x, y) => total(y) - total(x));
   items.sort((x, y) => total(y) - total(x));
@@ -2447,6 +2453,7 @@ function popHero(text, color) { pop(HERO_C.x, HERO_C.y - 26, text, color); }
 function hitEnemy(e, dmg, why = '') {
   // Bosses take 25% less from mana moves, so one big special can't melt them.
   if (e.boss && B && B.casting) dmg *= 0.75;
+  if (B && B.casting && B.movePow) dmg *= B.movePow;
   dmg = Math.max(1, Math.round(dmg));
   e.hp -= dmg;
   e.flash = 12;
@@ -2550,13 +2557,37 @@ async function doPlayer(action, targetId) {
   await enemyTurn();
 }
 
+// Move levels (owner request): every use of a mana move earns that move 1 XP. Each level adds 10% power,
+// and levels 3 and 5 also cut the mana cost by 1. Max level 5.
+const MOVE_XP = [0, 6, 16, 32, 55];
+function moveXp(id) { return (G.moveXp && G.moveXp[id]) || 0; }
+function moveLvl(id) { const x = moveXp(id); let l = 0; for (const t of MOVE_XP) if (x >= t) l++; return l; }
+function movePow(id) { return 1 + (moveLvl(id) - 1) * 0.1; }
+function moveMp(id, def) { const l = moveLvl(id); return Math.max(1, def.mp - (l >= 3 ? 1 : 0) - (l >= 5 ? 1 : 0)); }
+function moveLvlNote(id) {
+  const l = moveLvl(id);
+  return l >= MOVE_XP.length ? `Lv ${l} (max)` : `Lv ${l} · ${MOVE_XP[l] - moveXp(id)} more use${MOVE_XP[l] - moveXp(id) > 1 ? 's' : ''} to Lv ${l + 1}`;
+}
+function gainMoveXp(id, def) {
+  const before = moveLvl(id);
+  G.moveXp = G.moveXp || {};
+  G.moveXp[id] = moveXp(id) + 1;
+  const l = moveLvl(id);
+  if (l > before) {
+    if (B) popHero('MOVE LV ' + l + '!', '#4fd8e8');
+    say(`<span class="good"><b>${esc(def.name)}</b> grew to Lv ${l}!</span> +10% power${l === 3 || l === 5 ? ' and costs 1 less MP' : ''}.`);
+    bookie(R.pick(['Practice makes perfect. Or at least more painful.', 'That move is getting a fan club.', 'Look at that. The crawler is learning.']));
+  }
+}
 async function castMove(id, e) {
   const s = stats();
   const isClass = id === 'class';
   const def = isClass ? cls().skill : MOVES[id];
-  G.mp -= def.mp;
+  G.mp -= moveMp(id, def);
   B.casting = true;
-  try { await castMoveInner(id, e, s, isClass, def); } finally { B.casting = false; }
+  B.movePow = movePow(id);
+  try { await castMoveInner(id, e, s, isClass, def); } finally { B.casting = false; B.movePow = 1; }
+  gainMoveXp(id, def);
 }
 async function castMoveInner(id, e, s, isClass, def) {
   const eb = e && enemyBox(e);
@@ -2568,7 +2599,7 @@ async function castMoveInner(id, e, s, isClass, def) {
     const M = () => magPow() + R.int(0, 2);
     const fist = async (color = '#c8334a') => { await fly(HERO_C, { x: eb.cx, y: eb.cy }, 'fist', color, 240); burst(eb.cx, eb.cy, 'boom', color); };
     const allBoom = async (color, proj = 'junk') => { const mid = { x: 160, y: 56 }; await fly(HERO_C, mid, proj, color, 360); burst(mid.x, mid.y, 'boom', color); };
-    const healMe = (h) => { h = Math.round(h); G.hp = Math.min(s.maxHp, G.hp + h); burst(HERO_C.x, HERO_C.y, 'sparkle', '#6bbf59'); popHero('+' + h, '#6bbf59'); say(`<span class="good">+${h} HP</span>`); };
+    const healMe = (h) => { h = Math.round(h * (B.movePow || 1)); G.hp = Math.min(s.maxHp, G.hp + h); burst(HERO_C.x, HERO_C.y, 'sparkle', '#6bbf59'); popHero('+' + h, '#6bbf59'); say(`<span class="good">+${h} HP</span>`); };
     switch (def.kind) {
       case 'double': await fist(); hitEnemy(e, (a() + 1) * 1.5 - e.def); break;
       case 'bolt': await bolt(def.color || '#c49af0'); hitEnemy(e, M() * 1.1); break;
@@ -2610,8 +2641,8 @@ async function castMoveInner(id, e, s, isClass, def) {
   if (id === 'venom') { await bolt('#b8e05a'); e.poison = 3; say(`${esc(e.full)} is poisoned!`); }
   const M = () => magPow() + R.int(0, 2);
   if (id === 'frost') { await bolt('#4fd8e8'); hitEnemy(e, M() * 0.8); if (e.alive) { e.frozen = 1; say(`${esc(e.full)} is frozen solid!`); } }
-  if (id === 'leech') { await bolt('#c8334a'); const d = Math.round(M() * 0.9); hitEnemy(e, d); const h = Math.round(d / 2); G.hp = Math.min(s.maxHp, G.hp + h); popHero('+' + h, '#6bbf59'); }
-  if (id === 'mend') { burst(HERO_C.x, HERO_C.y, 'sparkle', '#6bbf59'); const h = 25 + s.mag; G.hp = Math.min(s.maxHp, G.hp + h); popHero('+' + h, '#6bbf59'); say(`<span class="good">+${h} HP</span>`); }
+  if (id === 'leech') { await bolt('#c8334a'); const d = Math.round(M() * 0.9); hitEnemy(e, d); const h = Math.round((d / 2) * (B.movePow || 1)); G.hp = Math.min(s.maxHp, G.hp + h); popHero('+' + h, '#6bbf59'); }
+  if (id === 'mend') { burst(HERO_C.x, HERO_C.y, 'sparkle', '#6bbf59'); const h = Math.round((25 + s.mag) * (B.movePow || 1)); G.hp = Math.min(s.maxHp, G.hp + h); popHero('+' + h, '#6bbf59'); say(`<span class="good">+${h} HP</span>`); }
   if (id === 'iron') { burst(HERO_C.x, HERO_C.y, 'shield', '#8b84a3'); B.buff.def = (B.buff.def || 0) + 4; say('Your skin turns to iron. +4 defense.'); }
   if (id === 'fireball') { const mid = { x: 160, y: 56 }; await fly(HERO_C, mid, 'bolt', '#ff8a3a', 380); burst(mid.x, mid.y, 'boom', '#ff8a3a'); for (const x of alive()) hitEnemy(x, M() * 0.8 - x.def / 2); }
   if (id === 'lightning') { for (const x of alive()) { const b = enemyBox(x); burst(b.cx, b.cy, 'zap', '#f5c542'); } await sleep(250); for (const x of alive()) hitEnemy(x, M() * 0.95); }
