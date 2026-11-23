@@ -1213,11 +1213,7 @@ function renderControls() {
   if (mode === 'map') {
     controls.innerHTML = `
       <div class="pad-wrap">
-        <div class="dpad">
-          <div></div><button data-dir="up" aria-label="Up">▲</button><div></div>
-          <button data-dir="left" aria-label="Left">◀</button><div class="hub"></div><button data-dir="right" aria-label="Right">▶</button>
-          <div></div><button data-dir="down" aria-label="Down">▼</button><div></div>
-        </div>
+        <div class="stick" aria-label="Movement stick: drag to walk"><div class="stick-ring"><span class="arw u">▲</span><span class="arw d">▼</span><span class="arw l">◀</span><span class="arw r">▶</span><div class="knob"></div></div></div>
         <div class="ab">
           <div class="ab-row"><button class="round btn-b" data-k="bag" aria-label="Open bag">B</button><button class="round btn-a" data-k="a" aria-label="Interact">A</button></div>
           <div class="small-row"><button class="chip" data-k="bag">Bag</button><button class="chip" data-k="gear">Gear</button><button class="chip" data-k="map">Map</button><button class="chip" data-k="menu">Pause</button></div>
@@ -1263,6 +1259,36 @@ controls.addEventListener('pointerdown', (e) => {
   moveHeld = d.dataset.dir;
   try { d.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
 });
+// Movement stick: put your thumb down anywhere on it and drag. The farther direction wins.
+let stickId = null;
+function stickMove(e) {
+  const st = controls.querySelector('.stick-ring');
+  if (!st) return;
+  const r = st.getBoundingClientRect();
+  let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+  const max = r.width * 0.32, len = Math.hypot(dx, dy);
+  const k = len > max ? max / len : 1;
+  st.querySelector('.knob').style.transform = `translate(${dx * k}px, ${dy * k}px)`;
+  moveHeld = len < r.width * 0.12 ? null : Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+  st.dataset.dir = moveHeld || '';
+}
+function stickEnd() {
+  stickId = null; moveHeld = null;
+  const st = controls.querySelector('.stick-ring');
+  if (st) { st.querySelector('.knob').style.transform = ''; st.dataset.dir = ''; }
+}
+controls.addEventListener('pointerdown', (e) => {
+  const st = e.target.closest('.stick');
+  if (!st) return;
+  e.preventDefault();
+  stickId = e.pointerId;
+  try { st.setPointerCapture(e.pointerId); } catch { /* fine */ }
+  stickMove(e);
+});
+controls.addEventListener('pointermove', (e) => { if (stickId !== null && e.pointerId === stickId) stickMove(e); });
+controls.addEventListener('pointerup', (e) => { if (e.pointerId === stickId) stickEnd(); });
+controls.addEventListener('pointercancel', (e) => { if (e.pointerId === stickId) stickEnd(); });
+controls.addEventListener('touchstart', (e) => { if (e.target.closest('.stick')) e.preventDefault(); }, { passive: false });
 // Sliding your thumb onto another arrow changes direction without lifting it.
 controls.addEventListener('pointerover', (e) => {
   if (!moveHeld || !(e.buttons & 1) && e.pointerType === 'mouse') return;
@@ -2843,11 +2869,21 @@ async function flushSuggestions() {
   setSugQueue(left);
 }
 function openSuggest(from) {
-  sugState = { ...sugState, from, msg: '' };
+  sugState = { ...sugState, from, msg: '', sent: false };
   renderSuggest();
 }
 function renderSuggest() {
   const kinds = ['Idea', 'Bug', 'Balance', 'Other'];
+  const backLabel = sugState.from === 'menu' ? 'BACK TO GAME' : 'BACK TO TITLE';
+  if (sugState.sent) {
+    showOverlay(`
+      <h2>SUGGESTIONS BOX</h2>
+      <p class="banner gold" style="margin-top:16px">THANK YOU!</p>
+      <div class="bookie"><img src="${sprite('bookie').toDataURL()}" alt=""><p><b style="color:var(--pink)">BOOKIE:</b> ${esc(sugState.msg)}</p></div>
+      <button class="btn green" data-act="sugback">${backLabel}</button>
+      <button class="btn grey" data-act="sugmore">SEND ANOTHER</button>`);
+    return;
+  }
   showOverlay(`
     <h2>SUGGESTIONS BOX</h2>
     <div class="bookie"><img src="${sprite('bookie').toDataURL()}" alt=""><p><b style="color:var(--pink)">BOOKIE:</b> Got an idea, a bug, or a complaint about the odds? It goes straight to the people who make this show.</p></div>
@@ -2865,8 +2901,9 @@ function renderSuggest() {
 }
 Object.assign(overlayHandlers, {
   suggest: () => openSuggest(mode === 'map' ? 'menu' : 'title'),
+  sugmore: () => { sugState.sent = false; sugState.msg = ''; renderSuggest(); },
   sugkind: (_, b) => { sugState.kind = b.dataset.id; renderSuggest(); },
-  sugback: () => { sugState.msg = ''; if (sugState.from === 'menu') openMenu(); else showTitle(); },
+  sugback: () => { sugState.msg = ''; sugState.sent = false; if (sugState.from === 'menu') openMenu(true); else showTitle(); },
   sugsend: async (_, b) => {
     const text = (sugState.draft || '').trim();
     if (text.length < 3) { sugState.msg = 'Write a little more first.'; sugState.ok = false; return renderSuggest(); }
@@ -2880,6 +2917,7 @@ Object.assign(overlayHandlers, {
     sugState.draft = '';
     sugState.ok = true;
     sugState.msg = sent ? 'Sent! Thank you. Every suggestion gets read.' : 'Saved! It will be sent automatically the next time you open the game.';
+    sugState.sent = true;
     renderSuggest();
   },
 });
