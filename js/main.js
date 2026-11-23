@@ -295,8 +295,19 @@ function lowHpPulse() {
   h.classList.toggle('low', low);
   if (low) h.style.setProperty('--pulse', (0.35 + (pct / 0.35) * 0.95).toFixed(2) + 's');
 }
+// In a safe room with unopened boxes, an Open Boxes button pops up at the top of the game screen.
+function updateBoxPop() {
+  const btn = $('boxpop');
+  if (!btn) return;
+  const n = G && FL && mode === 'map' && overlay.hidden && !FL.tutorial && inSafe() ? boxCount() : 0;
+  btn.hidden = !n;
+  if (n) btn.textContent = `OPEN ${n} BOX${n > 1 ? 'ES' : ''}`;
+}
+$('boxpop').addEventListener('click', (e) => { e.stopPropagation(); if (canAct() && inSafe()) { moveHeld = null; openAllBoxes(); updateBoxPop(); } });
+['pointerdown', 'touchstart'].forEach((ev) => $('boxpop').addEventListener(ev, (e) => e.stopPropagation(), { passive: true }));
 function updateHud() {
   lowHpPulse();
+  updateBoxPop();
   if (!G) return;
   const s = stats();
   $('hud-floor').textContent = G.floor === 0 ? 'TUTORIAL' : 'F' + G.floor + ' THE LOBBY';
@@ -322,9 +333,10 @@ function updateHud() {
 function showOverlay(html) {
   overlay.innerHTML = html;
   overlay.hidden = false;
+  $('boxpop').hidden = true;
   overlay.scrollTop = 0;
 }
-function hideOverlay() { overlay.hidden = true; overlay.innerHTML = ''; }
+function hideOverlay() { overlay.hidden = true; overlay.innerHTML = ''; if (typeof updateBoxPop === 'function') updateBoxPop(); }
 
 const TRASH = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"></path></svg>';
 
@@ -1610,7 +1622,9 @@ function tryStep(dir) {
   reveal();
   if (G.race === 'troll' && G.steps % 4 === 0) G.hp = Math.min(stats().maxHp, G.hp + 1);
   const t = tileAt(FL, nx, ny);
+  if (t !== T.SAFE && wasSafe) updateBoxPop();
   if (t === T.SAFE && !wasSafe) {
+    updateBoxPop();
     save();
     if (FL.tutorial) tut('safe');
     else bookie(G.doc.met || !(FL.doc.x >= 0 && roomAt(FL, nx, ny) === FL.safeRoom) ? 'Safe room. Mobs can\'t come in here. Game saved.' : 'A safe room! Mobs can\'t come in. Your game just saved. Go say hi to the medic.');
@@ -1835,7 +1849,7 @@ function updateGuide(force = false) {
 }
 
 // ---------- Bag ----------
-let bagState = { tab: 'all', sort: 'new' };
+let bagState = { tab: 'all', sort: 'useful' };
 const TABS = [['all', 'All'], ['potion', 'Potions'], ['food', 'Food'], ['bomb', 'Bombs'], ['scroll', 'Scrolls'], ['gear', 'Gear'], ['box', 'Boxes'], ['junk', 'Materials']];
 
 function openBag() {
@@ -1846,12 +1860,36 @@ function sortedItems() {
   let ids = G.order.filter((id) => count(id) > 0);
   const t = bagState.tab;
   if (t !== 'all') ids = ids.filter((id) => (t === 'gear' ? isGear(id) : ITEMS[id].type === t));
+  if (bagState.sort === 'useful') {
+    // Grouped by type (healing first, junk last), strongest first inside each group.
+    return ids.slice().sort((a, b) => (G.favs[b] ? 1 : 0) - (G.favs[a] ? 1 : 0) || itemGroup(a) - itemGroup(b) || itemPower(b) - itemPower(a) || ITEMS[a].name.localeCompare(ITEMS[b].name));
+  }
   if (bagState.sort === 'new') ids = ids.slice().reverse();
   if (bagState.sort === 'rarity') ids = ids.slice().sort((a, b) => RARITY_ORDER.indexOf(ITEMS[a].rarity) - RARITY_ORDER.indexOf(ITEMS[b].rarity));
   if (bagState.sort === 'name') ids = ids.slice().sort((a, b) => ITEMS[a].name.localeCompare(ITEMS[b].name));
   // Things you can use to get stronger now go first, junk goes last, favorites stay on top.
   const rank = (id) => (G.favs[id] ? 0 : actionable(id) ? 1 : isJunk(id) ? 3 : 2);
   return ids.sort((a, b) => rank(a) - rank(b));
+}
+// Bag groups for the Useful sort, in the order they are listed.
+const GROUPS = ['Favorites', 'Healing', 'Mana', 'Bombs', 'Other potions', 'Loot boxes', 'Scrolls', 'Gear upgrades', 'Gear', 'Crafting materials', 'Junk to sell'];
+function itemGroup(id) {
+  const it = ITEMS[id];
+  if (G.favs[id]) return 0;
+  if (isJunk(id)) return 10;
+  if (it.type === 'food' || (it.type === 'potion' && it.heal)) return 1;
+  if (it.type === 'potion' && it.mana) return 2;
+  if (it.type === 'bomb') return 3;
+  if (it.type === 'potion') return 4;
+  if (it.type === 'box') return 5;
+  if (it.type === 'scroll') return 6;
+  if (isGear(id)) return bestUpgrade(id) ? 7 : 8;
+  return 9;
+}
+function itemPower(id) {
+  const it = ITEMS[id];
+  if (isGear(id)) return gearScore(id);
+  return (it.heal || 0) + (it.mana || 0) + (it.dmg || 0) + (5 - RARITY_ORDER.indexOf(it.rarity)) * 0.1;
 }
 // Returns [label, enabled, note]
 function itemAction(id) {
@@ -1865,7 +1903,7 @@ function itemAction(id) {
   }
   if (it.type === 'potion' || it.type === 'food') { const w = potionWait(id); return w ? ['Use', false, w] : ['Use', true]; }
   if (isGear(id)) return [spareCopies(id) > 0 ? 'Equip' : 'Unequip', true];
-  if (it.type === 'junk' && it.edible) return ['Eat', true];
+  if (it.type === 'junk' && it.edible) return noNeed(id) ? ['Eat', false, 'HP full'] : ['Eat', true];
   if (it.type === 'bomb') return [null, false, 'Throw it in a fight'];
   return [null, false];
 }
@@ -1873,27 +1911,33 @@ function boxCount() { return G.order.filter((id) => ITEMS[id].type === 'box').re
 function renderBag(extra = '') {
   const ids = sortedItems();
   const total = G.order.reduce((a, id) => a + count(id), 0);
+  const grouped = bagState.sort === 'useful';
+  let lastGroup = -1;
   const rows = ids.map((id) => {
     const it = ITEMS[id];
     const [act, ok, note] = itemAction(id);
+    const grp = grouped ? itemGroup(id) : -1;
+    const head = grouped && grp !== lastGroup ? `<div class="item-group">${GROUPS[grp]}</div>` : '';
+    lastGroup = grp;
     const eq = isEquipped(id);
     const side = it.type === 'potion' && G.sideFx[id] !== undefined ? ' Side effect: ' + SIDE_EFFECTS[G.sideFx[id]].text : '';
     const bnd = boundCount(id) && !it.nosell ? ` ${boundCount(id)} from shop boxes: can't be sold.` : '';
-    return `<div class="item"><img src="${icon(id)}" alt="">
+    return `${head}<div class="item"><img src="${icon(id)}" alt="">
       <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))} x${count(id)} ${eq ? '<span class="equipped">EQUIPPED</span>' : ''}${badgeHtml(id)}</span><span class="ds">${isGear(id) ? gearDescHtml(id) : esc(it.desc + side + bnd)}${note ? ` <b style="color:var(--pink)" ${note.startsWith('Ready in') ? `data-potion-timer="${id}"` : ''}>${esc(note)}</b>` : ''}</span></div>
       <button class="star ${G.favs[id] ? 'on' : ''}" data-act="fav" data-id="${id}" aria-label="Favorite">★</button>
       ${act ? `<button class="act" data-act="use" data-id="${id}" ${ok ? '' : 'disabled'} ${note && note.startsWith('Ready in') ? 'data-potion-btn' : ''}>${act}</button>` : ''}</div>`;
   }).join('') || '<p class="muted">Nothing here yet.</p>';
   const boxes = boxCount();
   const openAll = boxes > 0
-    ? (inSafe() ? `<button class="btn gold" data-act="openall">OPEN ALL BOXES (${boxes})</button>` : `<p class="muted" style="font-size:15px">You have ${boxes} loot box${boxes > 1 ? 'es' : ''}. Open them in a safe room.</p>`)
+    ? (inSafe() ? `<button class="btn gold" data-act="openall">OPEN ${boxes} BOX${boxes > 1 ? 'ES' : ''}</button>` : '')
     : '';
+  const boxNote = boxes > 0 && !inSafe() ? `<p class="muted" style="font-size:14px; margin:0">${boxes} loot box${boxes > 1 ? 'es' : ''} waiting. Open them in a safe room.</p>` : '';
   showOverlay(`
     <div class="row-between"><h2>BAG</h2><span class="muted" style="font-size:14px">${total} items · no limit</span></div>
-    ${extra}${openAll}
-    <button class="btn" data-act="gear">GEAR: EQUIP ITEMS${upgradeCount() ? ` (${upgradeCount()} UPGRADE${upgradeCount() > 1 ? 'S' : ''})` : ''}</button>
+    ${extra}
+    <div class="bag-top">${openAll}<button class="btn" data-act="gear">GEAR${upgradeCount() ? ` (${upgradeCount()} UPGRADE${upgradeCount() > 1 ? 'S' : ''})` : ''}</button></div>${boxNote}
     <div class="tabs grid4">${TABS.map(([k, l]) => `<button class="tab ${bagState.tab === k ? 'on' : ''}" data-act="tab" data-id="${k}">${l}</button>`).join('')}</div>
-    <div class="tabs"><span class="tabs-lbl">Sort</span>${[['new', 'Newest'], ['rarity', 'Rarity'], ['name', 'A to Z']].map(([k, l]) => `<button class="tab ${bagState.sort === k ? 'on' : ''}" data-act="sort" data-id="${k}">${l}</button>`).join('')}</div>
+    <div class="tabs"><span class="tabs-lbl">Sort</span>${[['useful', 'Useful'], ['new', 'Newest'], ['rarity', 'Rarity'], ['name', 'A to Z']].map(([k, l]) => `<button class="tab ${bagState.sort === k ? 'on' : ''}" data-act="sort" data-id="${k}">${l}</button>`).join('')}</div>
     <div class="items">${rows}</div>
     <button class="btn grey" data-act="closebag" style="position:sticky; bottom:0">CLOSE</button>`);
 }
@@ -1990,7 +2034,17 @@ function consume(id) {
 // Mob Radar is not a drink for healing, so it has no cooldown.
 const POTION_CD = 15;
 function cooled(id) { return ITEMS[id].type === 'potion' && !ITEMS[id].radar && !ITEMS[id].guide; }
+// True when an item would only heal HP or MP you already have full (owner: don't let me eat at full HP).
+function noNeed(id) {
+  const it = ITEMS[id];
+  if (!it || it.mystery || it.guide || it.radar) return false;
+  const heals = !!(it.heal || (it.type === 'junk' && it.edible)), mana = !!it.mana;
+  if (!heals && !mana) return false;
+  const s = stats();
+  return !(heals && G.hp < s.maxHp) && !(mana && G.mp < s.maxMp);
+}
 function potionWait(id) {
+  if (noNeed(id)) return ITEMS[id].mana && !ITEMS[id].heal ? 'MP full' : 'HP full';
   if (!cooled(id)) return '';
   return G.potionCd > 0 ? `Ready in ${Math.ceil(G.potionCd)}s` : '';
 }
@@ -2307,7 +2361,7 @@ function renderBattleControls() {
   } else if (B.phase === 'target') {
     btns = `<p class="muted" style="margin:0">Who gets the ${esc(B.pendingLabel)}?</p><div class="stack opts">${alive().map((e) => `<button class="btn red text" data-b="target" data-arg="${e.id}">${esc(e.full)} (${e.hp} HP)</button>`).join('')}</div><button class="btn grey" data-b="back">BACK</button>`;
   } else if (B.phase === 'items') {
-    const usable = G.order.filter((id) => count(id) > 0 && ['potion', 'food'].includes(ITEMS[id].type)).sort((a, b) => (G.favs[b] ? 1 : 0) - (G.favs[a] ? 1 : 0));
+    const usable = G.order.filter((id) => count(id) > 0 && ['potion', 'food'].includes(ITEMS[id].type)).sort((a, b) => itemGroup(a) - itemGroup(b) || itemPower(b) - itemPower(a));
     btns = `<div class="stack opts">${usable.map((id) => { const w = potionWait(id); return `<button class="btn green text" data-b="use" data-arg="${id}" ${w ? 'disabled' : ''}>${G.favs[id] ? '★ ' : ''}${ITEMS[id].type === 'food' ? 'EAT' : 'DRINK'} ${esc(ITEMS[id].name)} x${count(id)}${w ? ` (${w})` : ''}</button>`; }).join('') || '<p class="muted">No potions or food. Bombs are under Attack.</p>'}</div><button class="btn grey" data-b="back">BACK</button>`;
   } else if (B.phase === 'mercy') {
     btns = `<div class="grid2"><button class="btn green" data-b="spare">SPARE IT</button><button class="btn red" data-b="finish">FINISH IT</button></div>`;
