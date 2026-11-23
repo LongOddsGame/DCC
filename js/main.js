@@ -1,6 +1,6 @@
 // Long Odds prototype. Game state, map, battles, bag, safe room and screens.
 import { R, makeRng, newSeed } from './rng.js?v=__BUILD_VERSION__';
-import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, GEAR_TYPES, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, RECIPES, SCHOOL_NAMES } from './data.js?v=__BUILD_VERSION__';
+import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, GEAR_TYPES, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, FLOORS, LAST_FLOOR, MINIONS, floorDef, floorSize, baseId, RECIPES, SCHOOL_NAMES } from './data.js?v=__BUILD_VERSION__';
 import { generateFloor, tutorialFloor, roomAt, makeGroup, walkable, tileAt, stageAt, T, key } from './dungeon.js?v=__BUILD_VERSION__';
 import { sprite, heroSprite, flipped, docSprite, boxSprite, mobSprite, itemIcon, slotIcon } from './sprites.js?v=__BUILD_VERSION__';
 import { SLOT_COUNT, readSlot, writeSlot, deleteSlot, listSlots, exportCode, importCode } from './save.js?v=__BUILD_VERSION__';
@@ -46,6 +46,11 @@ let objIndex = new Map();
 let FX = { proj: null, pops: [], bursts: [], heroFlash: 0 };
 const icon = (id) => itemIcon(id, ITEMS[id].type, ITEMS[id].rarity);
 const isGear = (id) => !!ITEMS[id] && GEAR_TYPES.includes(ITEMS[id].type);
+// The floor you are on sets the danger, prices and rewards (see FLOORS in data.js).
+function fd() { return floorDef(G && G.floor); }
+function fsize() { return floorSize(G ? G.floor : 1); }
+// New gear found on Floor 2 and below is floor tagged ("w_pipe@2"), with bigger stats.
+function tierId(id) { return G && G.floor >= 2 && isGear(id) && !ITEMS[id].tier ? `${baseId(id)}@${G.floor}` : id; }
 const slotType = (sl) => (sl === 'ring1' || sl === 'ring2' ? 'ring' : sl);
 
 function race() { return byId(RACES, G.race); }
@@ -134,7 +139,7 @@ function rollLoot(boxId) {
     if (gear.length) got[0] = [R.pick(gear)[0], 1];
   }
   const [a, b] = BOX_TOKENS[boxId];
-  return { items: got, tokens: R.int(a, b) };
+  return { items: got.map(([id, n]) => [tierId(id), n]), tokens: Math.round(R.int(a, b) * fsize()) };
 }
 
 // ---------- Hype, odds, achievements, people ----------
@@ -156,11 +161,11 @@ function addHype(n) {
   updateHud();
 }
 // Crowd gifts grow with you, so the best gear still feels special later on.
-function hypeGiftBox() { return G.lvl >= 8 ? 'box_patron' : G.lvl >= 5 ? 'box_gold' : G.lvl >= 3 ? 'box_silver' : 'box_rusty'; }
+function hypeGiftBox() { return G.lvl >= 10 ? 'box_patron' : G.lvl >= 5 ? 'box_gold' : G.lvl >= 3 ? 'box_silver' : 'box_rusty'; }
 function oddsText() { return Math.max(1, Math.round(G.odds)) + ' to 1'; }
 
 function achieve(id) {
-  if (G.ach[id]) return;
+  if (G.ach[id] || !ACHIEVEMENTS[id]) return;
   G.ach[id] = true;
   const a = ACHIEVEMENTS[id];
   say(`<span class="good">Achievement: ${esc(a.name)}!</span> ${esc(a.text)}`);
@@ -218,6 +223,7 @@ function newGame(slot, name, jobId, raceId, clsId, tutorial = true, perks = [], 
   if (hasPerk('stash')) { addItem('box_rusty', 2, true); G.tokens += 20; }
   if (raceId === 'goblin') G.doc.trust -= 5;
   if (raceId === 'ghoul') G.doc.fear += 10;
+  G.upgV = 2;
   const s = stats();
   G.hp = s.maxHp; G.mp = s.maxMp;
   addItem('potion_heal', 2, true);
@@ -275,6 +281,7 @@ function loadSlot(i) {
   delete G.timeLeft; delete G.timerWarn; delete G.bossDead;
   buildFloor();
   if (oldWorld || !G.pos || !walkable(FL, G.pos.x, G.pos.y)) G.pos = { ...FL.start };
+  if ((G.upgV || 1) < 2) refundOverCap();
   return true;
 }
 
@@ -311,7 +318,7 @@ function updateHud() {
   updateBoxPop();
   if (!G) return;
   const s = stats();
-  $('hud-floor').textContent = G.floor === 0 ? 'TUTORIAL' : 'F' + G.floor + ' THE LOBBY';
+  $('hud-floor').textContent = G.floor === 0 ? 'TUTORIAL' : 'F' + G.floor + ' ' + fd().name.toUpperCase();
   const tEl = $('hud-timer');
   if (G.radar > 0) { tEl.textContent = 'RADAR ' + Math.ceil(G.radar) + 's'; tEl.classList.toggle('warn', G.radar <= 10); }
   else if (G.guide > 0) { tEl.textContent = 'COMPASS ' + Math.ceil(G.guide) + 's'; tEl.classList.toggle('warn', G.guide <= 10); }
@@ -726,10 +733,10 @@ function docGreeting() {
     hostile: 'I don\'t help people like you. Buy something or get out.',
   }[docMood()]);
 }
-function healPrice() { return { friend: 0, warm: 5, neutral: 10, scared: 0, hostile: null }[docMood()]; }
+function healPrice() { const p = { friend: 0, warm: 5, neutral: 10, scared: 0, hostile: null }[docMood()]; return p == null ? p : Math.round(p * fsize()); }
 function potionPrice() {
   const base = { friend: 5, warm: 7, neutral: 8, scared: 8, hostile: 16 }[docMood()];
-  return cls().haggle ? Math.max(3, base - 2) : base;
+  return Math.round((cls().haggle ? Math.max(3, base - 2) : base) * fsize());
 }
 function docPanel() {
   const d = G.doc;
@@ -854,26 +861,55 @@ function gearStats(id) {
 }
 // ----- Upgrade table: raise a piece of gear up to +5 -----
 const UPG_MAX = 5;
+// Each floor caps how far you can upgrade (owner maxed everything on Floor 1): +2 on Floor 1, +3 on Floor 2...
+function upgCap() { return Math.min(UPG_MAX, fd().upgCap || UPG_MAX); }
 const UPG_MAT = { weapon: 'j_wire', wrist: 'j_wire', ring: 'j_wire', head: 'j_token', armor: 'j_token', neck: 'j_token', shirt: 'j_feather', shoes: 'j_feather', legs: 'j_feather', back: 'j_feather' };
 function upgLevel(id) { return (G && G.upg && G.upg[id]) || 0; }
+// Each upgrade level adds 10% of every stat on the item (+5 = +50%). The item's main stat always gains
+// at least +1 every two levels, so small items still grow a little. (It used to be at least +1 per level,
+// which made a +1 stat worth +6 at +5.)
+const MAIN_WEIGHT = { atk: 1, def: 1, mag: 1, spd: 0.8, maxHp: 0.25, maxMp: 0.3 };
+function mainStat(it) { let best = null, bw = 0; for (const k in MAIN_WEIGHT) { const w = (it[k] || 0) * MAIN_WEIGHT[k]; if (w > bw) { bw = w; best = k; } } return best; }
 function upgBonus(id, k, lvl) {
-  const base = ITEMS[id][k] || 0;
+  const it = ITEMS[id], base = it[k] || 0;
   if (base <= 0 || !lvl) return 0;
-  const step = k === 'maxHp' || k === 'maxMp' ? Math.max(2, Math.round(base * 0.25)) : Math.max(1, Math.round(base * 0.25));
-  return step * lvl;
+  let b = Math.round(base * 0.1 * lvl);
+  if (k === mainStat(it)) b = Math.max(b, Math.ceil(lvl / 2));
+  return b;
 }
 function upgCost(id) {
   const n = upgLevel(id) + 1;
   const need = { [UPG_MAT[ITEMS[id].type]]: n };
-  if (n >= 3) need.j_jelly = n - 2;
-  return { need, tokens: Math.round(((RARITY_PRICE[ITEMS[id].rarity] || 6) / 3) * n) };
+  if (n >= 2) need.j_jelly = n - 1;
+  return { need, tokens: Math.round(((RARITY_PRICE[ITEMS[id].rarity] || 6) / 3) * n * floorSize(ITEMS[id].tier || 1)) };
 }
-// Scrap (from breaking gear down) covers any missing upgrade material, one for one.
+// Scrap (from breaking gear down) covers missing upgrade materials one for one, but only up to half of them.
 function scrapNeeded(c) { return Object.entries(c.need).reduce((a, [m, n]) => a + Math.max(0, n - count(m)), 0); }
+function scrapLimit(c) { return Math.floor(Object.values(c.need).reduce((a, n) => a + n, 0) / 2); }
 function canUpgrade(id) {
-  if (upgLevel(id) >= UPG_MAX) return false;
+  if (upgLevel(id) >= upgCap()) return false;
   const c = upgCost(id);
-  return G.tokens >= c.tokens && scrapNeeded(c) <= count('j_scrap');
+  const sn = scrapNeeded(c);
+  return G.tokens >= c.tokens && sn <= count('j_scrap') && sn <= scrapLimit(c);
+}
+// Old saves: gear upgraded past this floor's cap (under the old, stronger rules) drops to the cap, and you
+// get back the Scrap and tokens those extra levels cost.
+function refundOverCap() {
+  if (!G.upg || G.floor < 1) return;
+  const cap = upgCap();
+  let tokens = 0, scrap = 0, items = 0;
+  for (const id of Object.keys(G.upg)) {
+    const l = G.upg[id];
+    if (!ITEMS[id] || l <= cap) continue;
+    for (let n = cap + 1; n <= l; n++) { tokens += Math.round(((RARITY_PRICE[ITEMS[id].rarity] || 6) / 3) * n); scrap += n + Math.max(0, n - 2); }
+    G.upg[id] = cap; items++;
+  }
+  G.upgV = 2;
+  if (!items) return;
+  G.tokens += tokens;
+  addItem('j_scrap', scrap, true);
+  const s = stats(); G.hp = Math.min(G.hp, s.maxHp); G.mp = Math.min(G.mp, s.maxMp);
+  G.upgNote = `New upgrade rules! Gear can go up to +${cap} on Floor ${G.floor}. ${items} item${items > 1 ? 's were' : ' was'} lowered to +${cap}, and you got back ${tokens} tokens and ${scrap} Scrap.`;
 }
 // Breaking down gear gives Scrap by rarity. Equipped copies are never broken down.
 const SCRAP_YIELD = { common: 1, rusty: 2, silver: 3, gold: 5, patron: 8 };
@@ -1046,11 +1082,14 @@ function badgeHtml(id) {
   if (isJunk(id)) return ' <span class="junk-tag">JUNK</span>';
   return '';
 }
-function shopTier() { let t = 0; SHOP_TIERS.forEach((x, i) => { if (G.lvl >= x.lvl) t = i; }); return t; }
+// Penny's shelves unlock by floor (and level): silver on Floor 2, gold on Floor 4. Patron boxes are never sold.
+function shopTier() { let t = 0; SHOP_TIERS.forEach((x, i) => { if (G.lvl >= x.lvl && G.floor >= (x.floor || 1)) t = i; }); return t; }
 function priceOf(id) {
   const it = ITEMS[id];
   // Prices raised 60% after playtesting (owner: shop prices were too low).
-  let p = Math.round((it.price || RARITY_PRICE[it.rarity] || 6) * 1.6);
+  // Prices grow with the floor (floor tagged gear already has its floor in its price).
+  let p = Math.round((it.price || RARITY_PRICE[it.rarity] || 6) * 1.6 * (it.tier ? 1 : fsize()));
+  if (FL && FL.rule && FL.rule.id === 'happyhour') p = Math.round(p * 0.75);
   if (isGear(id) || it.type === 'scroll') p = Math.round(p * 1.25);
   if (cls().haggle) p = Math.max(1, Math.round(p * 0.8));
   if (chaBonus()) p = Math.max(1, Math.round(p * (1 - Math.max(-0.1, Math.min(0.25, chaBonus() * 0.02)))));
@@ -1068,9 +1107,10 @@ function shopStock() {
   const rng = makeRng(((G.seed ^ (G.floor * 7919) ^ (G.lvl * 104729)) >>> 0) || 1);
   const basics = [], scrolls = [];
   for (let i = 0; i <= t; i++) { basics.push(...SHOP_TIERS[i].basics); scrolls.push(...SHOP_TIERS[i].scrolls.filter((sc) => !knownScroll(sc))); }
-  // Every level shifts the odds toward rarer gear and adds more specials.
-  const L = G.lvl;
-  const weights = { rusty: Math.max(1, 10 - 2 * L), silver: L >= 2 ? Math.min(10, 2 * L) : 0, gold: L >= 4 ? (L - 3) * 2 : 0, patron: L >= 7 ? (L - 6) * 2 : 0 };
+  basics.push(...(fd().shop || []));
+  // Gear odds go by floor: mostly rusty on Floor 1, silver from Floor 2, gold from Floor 4. Never Patron gear.
+  const L = Math.min(G.lvl, fd().lvl[1] + 2), F = G.floor;
+  const weights = { rusty: Math.max(1, 10 - 2 * L), silver: F >= 2 || L >= 3 ? Math.min(10, 2 * L) : 0, gold: F >= 4 ? (L - 3) * 2 : F >= 2 ? 2 : 0, patron: 0 };
   const total = Object.values(weights).reduce((a, b) => a + b, 0);
   const pool = Object.keys(ITEMS).filter((id) => isGear(id) && weights[ITEMS[id].rarity]);
   let specials = [];
@@ -1080,6 +1120,7 @@ function shopStock() {
     const pick = rng.pick(pool.filter((id) => ITEMS[id].rarity === rar && !specials.includes(id)));
     if (pick) specials.push(pick);
   }
+  specials = specials.map(tierId);
   specials = specials.concat(rng.shuffle(scrolls).slice(0, 2));
   return { basics, specials };
 }
@@ -1091,7 +1132,7 @@ function pennyLine() {
   if (last === 'creepy' && R.chance(0.5)) return 'Please do not eat anything you have not paid for.';
   if (G.tokens < 10) return 'Window shopping? Bold.';
   return R.pick([
-    'Level up and I unlock the good shelf. The Patrons ship me fancier stuff for fancier crawlers.',
+    'Go deeper and I unlock the good shelf. The Patrons ship fancier stuff to deeper floors.',
     'Everything is final sale. Also everything might be final, period.',
     'Sell me your junk. I will sell it back to someone dumber. Not you. Probably.',
   ]);
@@ -1153,7 +1194,7 @@ function renderShop(extra = '', keepScroll = true) {
   showOverlay(`
     <div class="row-between"><h2>PENNY'S PAWN</h2><span class="tok">${G.tokens} tokens</span></div>
     <div class="bookie"><img src="${sprite('shop').toDataURL()}" alt=""><p><b style="color:var(--gold)">PENNY:</b> ${esc(shopState.line)}</p></div>
-    <p class="muted" style="font-size:15px">Penny restocks every time you level up or reach a new floor, and her gear gets rarer with each level you gain. ${next ? `New supplies and scrolls unlock at level ${next.lvl}.` : 'Every shelf is open.'}</p>
+    <p class="muted" style="font-size:15px">Penny restocks every time you level up or reach a new floor. Prices go up on deeper floors, and her better shelves open deeper down. ${next ? `New supplies and scrolls unlock on Floor ${next.floor} at level ${next.lvl}.` : 'Every shelf is open.'}</p>
     <div class="tabs"><button class="tab ${shopState.tab === 'buy' ? 'on' : ''}" data-act="shoptab" data-id="buy">Buy</button><button class="tab ${shopState.tab === 'sell' ? 'on' : ''}" data-act="shoptab" data-id="sell">Sell</button><button class="tab" data-act="shopgear">My gear</button></div>
     ${body}
     ${extra ? `<div class="shop-toast">${extra}</div>` : ''}
@@ -1197,6 +1238,14 @@ Object.assign(overlayHandlers, {
     renderShop(`<p class="note good">Sold all junk for ${v} tokens.</p>`);
   },
   shopclose: () => { save(); hideOverlay(); renderControls(); },
+  buyback: () => {
+    let v = 0;
+    for (const id of junkList()) { const n = sellableCount(id); if (n > 0) { v += n * sellPrice(id); removeItem(id, n, true); } }
+    G.tokens += v;
+    save();
+    showFloorClear(`Sold your junk to the Patrons for ${v} tokens. You have ${G.tokens} tokens.`);
+  },
+  downstairs: () => goDownstairs(),
 });
 
 // ---------- Crafting bench: recipes unlock as you level up ----------
@@ -1239,28 +1288,28 @@ function renderUpgrade(extra = '') {
   const rows = ids.map((id) => {
     const it = ITEMS[id];
     const lvl = upgLevel(id);
-    const maxed = lvl >= UPG_MAX;
+    const maxed = lvl >= upgCap();
     let body;
-    if (maxed) body = '<span class="need"><span class="ok">Fully upgraded</span></span>';
+    if (maxed) body = `<span class="need"><span class="ok">${lvl >= UPG_MAX ? 'Fully upgraded' : `Max for Floor ${G.floor} (+${upgCap()}). Deeper floors allow more.`}</span></span>`;
     else {
       const c = upgCost(id);
       const gains = Object.keys(STAT_NAMES).filter((k) => (it[k] || 0) > 0).map((k) => `<span class="delta up">▲+${upgBonus(id, k, lvl + 1) - upgBonus(id, k, lvl)} ${STAT_NAMES[k]}</span>`).join(' ');
       const need = Object.entries(c.need).map(([m, n]) => `<span class="${count(m) >= n ? 'ok' : 'no'}">${esc(ITEMS[m].name)} ${Math.min(count(m), n)}/${n}</span>`);
       const sn = scrapNeeded(c);
-      if (sn) need.push(`<span class="${count('j_scrap') >= sn ? 'ok' : 'no'}">or Scrap ${Math.min(count('j_scrap'), sn)}/${sn}</span>`);
+      if (sn) need.push(sn > scrapLimit(c) ? `<span class="no">Scrap can cover only ${scrapLimit(c)} of these</span>` : `<span class="${count('j_scrap') >= sn ? 'ok' : 'no'}">or Scrap ${Math.min(count('j_scrap'), sn)}/${sn}</span>`);
       need.push(`<span class="${G.tokens >= c.tokens ? 'ok' : 'no'}">${c.tokens} tokens</span>`);
       body = `<span class="ds">Next: ${gains}</span><span class="need">Needs: ${need.join(', ')}</span>`;
     }
     return `<div class="item ${isEquipped(id) ? 'on' : ''}"><img src="${icon(id)}" alt="">
       <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))}${isEquipped(id) ? ' <span class="equipped">EQUIPPED</span>' : ''}</span>
-      <span class="ds">${esc(SLOT_NAMES[it.type])}: ${esc(statText(id))} · <span class="pips">${'■'.repeat(lvl)}${'□'.repeat(UPG_MAX - lvl)}</span></span>${body}</div>
+      <span class="ds">${esc(SLOT_NAMES[it.type])}: ${esc(statText(id))} · <span class="pips">${'■'.repeat(lvl)}${'□'.repeat(Math.max(0, upgCap() - lvl))}</span></span>${body}</div>
       <button class="act gold" data-act="upgrade" data-id="${id}" ${canUpgrade(id) ? '' : 'disabled'}>${maxed ? 'MAX' : '+' + (lvl + 1)}</button></div>`;
   }).join('') || '<p class="muted">You have no gear to upgrade yet.</p>';
   showOverlay(`
     <div class="row-between"><h2>WORKBENCH</h2><span class="tok">${G.tokens} tokens</span></div>
     ${benchTabs()}
     ${extra}
-    <p class="muted" style="font-size:15px">Make your gear stronger, up to +${UPG_MAX}. Each upgrade raises every stat on the item. Upgrades use crafting materials and tokens, and apply to every copy of that item you own.</p>
+    <p class="muted" style="font-size:15px">Make your gear stronger. Each upgrade adds 10% to every stat on the item. On Floor ${G.floor} you can go up to +${upgCap()}; deeper floors allow more, up to +${UPG_MAX}. Scrap can fill in for up to half the materials. Upgrades apply to every copy of that item you own.</p>
     <div class="items">${rows}</div>
     <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
 }
@@ -1280,7 +1329,7 @@ function renderSalvage(extra = '') {
   showOverlay(`
     <div class="row-between"><h2>WORKBENCH</h2><span class="tok">${count('j_scrap')} Scrap</span></div>
     ${benchTabs()}
-    <p class="muted" style="font-size:15px">Break spare gear down into <b style="color:var(--gold)">Scrap</b>. On the Upgrade tab, Scrap fills in for any material you are missing. Rarer gear gives more: common 1, rusty 2, silver 3, gold 5, patron 8, plus 1 per upgrade level.</p>
+    <p class="muted" style="font-size:15px">Break spare gear down into <b style="color:var(--gold)">Scrap</b>. On the Upgrade tab, Scrap fills in for up to half of the materials an upgrade needs. Rarer gear gives more: common 1, rusty 2, silver 3, gold 5, patron 8, plus 1 per upgrade level.</p>
     <div class="items">${rows}</div>
     ${extra ? `<div class="shop-toast">${extra}</div>` : ''}
     <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
@@ -1347,7 +1396,7 @@ Object.assign(overlayHandlers, {
     G.hp = Math.min(s2.maxHp, G.hp + Math.max(0, s2.maxHp - before.maxHp));
     G.mp = Math.min(s2.maxMp, G.mp + Math.max(0, s2.maxMp - before.maxMp));
     say(`Upgraded <span class="loot">${esc(itemName(id))}</span>!`);
-    if (G.upg[id] === UPG_MAX) bookie('Maxed out! The Patrons respect a crawler who does their homework.');
+    if (G.upg[id] === upgCap()) bookie(upgCap() >= UPG_MAX ? 'Maxed out! The Patrons respect a crawler who does their homework.' : `That's as far as it goes on this floor. Find better gear deeper down.`);
     updateHud();
     renderBench(`<div class="reveal"><p class="note good">${esc(itemName(id))}: ${esc(statText(id))}</p></div>`);
   },
@@ -1391,12 +1440,13 @@ function enterMap(fresh) {
   if (FL.tutorial) {
     tut('start');
   } else if (fresh) {
-    bookie(R.pick(BOOKIE.welcome));
+    bookie(G.floor >= 2 ? `Welcome to Floor ${G.floor}: ${fd().name.toUpperCase()}! New mobs, new bosses, same terrible odds.` : R.pick(BOOKIE.welcome));
     say(`<b>Floor rule: ${esc(FL.rule.name).toUpperCase()}.</b> ${esc(FL.rule.text)}`);
     say('This floor has 4 stages, left to right. Beat the Gatekeeper at the end of each stage to open the next one. Both bosses and the stairs are in Stage 4.');
   } else {
     bookie('Welcome back, ' + G.name + '. The cameras never stopped rolling.');
   }
+  if (G.upgNote) { say(`<b>${esc(G.upgNote)}</b>`); G.upgNote = ''; }
   updateHud();
   renderControls();
 }
@@ -1761,9 +1811,9 @@ function respawnMobs() {
     const r = R.pick(rooms);
     const p = { x: R.int(r.x, r.x + r.w - 1), y: R.int(r.y, r.y + r.h - 1) };
     if (tileAt(FL, p.x, p.y) !== T.FLOOR || objectAt(p.x, p.y) || mobAt(p.x, p.y)) continue;
-    const depth = Math.min(1, (FL.dist ? FL.dist[r.cy * FL.w + r.cx] : 0) / FL.far);
-    const grp = makeGroup(R, Object.keys(MOBS), Object.keys(TRAITS), Math.max(0, depth), R.chance(0.04));
-    mobsLive.push({ id: 'r' + (G.spawnCount++), x: p.x, y: p.y, stun: 0, ...grp });
+    const depth = r.depth != null ? r.depth : Math.min(1, (FL.dist ? FL.dist[r.cy * FL.w + r.cx] : 0) / FL.far);
+    const grp = makeGroup(R, FL.mobTypes || fd().mobs, Object.keys(TRAITS), Math.max(0, depth), R.chance(0.04));
+    mobsLive.push({ id: 'r' + (G.spawnCount++), x: p.x, y: p.y, stun: 0, depth, respawn: true, ...grp });
     made++;
   }
   if (made) bookie(R.pick(['Fresh mobs just wandered onto the floor. The Patrons demanded more content.', 'New mobs incoming! Somebody up top paid for a refill.']));
@@ -2095,7 +2145,10 @@ function consume(id) {
   const s = stats();
   removeItem(id);
   let heal = it.heal || 0;
+  // Health potions heal a share of your max HP, so they stay useful on deeper floors.
+  if (it.healPct) heal = Math.max(heal, Math.round(s.maxHp * it.healPct / 100));
   if (it.type === 'potion' && hasPerk('medic')) heal = Math.round(heal * 1.2);
+  if (it.type === 'food' && FL && FL.rule && FL.rule.id === 'allyoucaneat') heal *= 2;
   if (it.type === 'food' && hasPerk('chef')) heal *= 2;
   if (it.type === 'junk') {
     heal = it.edible * (G.race === 'ogre' ? 2 : 1);
@@ -2104,6 +2157,15 @@ function consume(id) {
   } else if (it.type === 'food') {
     if (G.race === 'ogre') heal *= 2;
     say(`You eat the ${esc(it.name)}.`);
+    if (it.spoil && G.race !== 'ogre' && G.race !== 'ghoul' && R.chance(it.spoil)) {
+      heal = 0;
+      const pd = Math.round(3 * fsize());
+      if (B) { B.poison = 3; B.poisonDmg = pd; B.burn = false; } else { G.hp = Math.max(1, G.hp - pd * 2); flashHp(); }
+      say('<b>It was spoiled!</b> Your stomach turns. You are poisoned.');
+    } else if (it.buff) {
+      for (const [k, v] of Object.entries(it.buff)) setBuff(k, Math.round(v * fsize()));
+      say(`<span class="good">${Object.entries(it.buff).map(([k, v]) => '+' + Math.round(v * fsize()) + ' ' + STAT_NAMES[k]).join(', ')}</span> ${B ? 'for this fight' : 'for your next fight'}.`);
+    }
   } else say(`You drink the ${esc(it.name)}.`);
   if (it.mystery) {
     const r = R.int(0, 3);
@@ -2156,7 +2218,7 @@ function cooled(id) { return ITEMS[id].type === 'potion' && !ITEMS[id].radar && 
 // True when an item would only heal HP or MP you already have full (owner: don't let me eat at full HP).
 function noNeed(id) {
   const it = ITEMS[id];
-  if (!it || it.mystery || it.guide || it.radar || it.safeGuide) return false;
+  if (!it || it.mystery || it.guide || it.radar || it.safeGuide || it.buff) return false;
   const heals = !!(it.heal || (it.type === 'junk' && it.edible)), mana = !!it.mana;
   if (!heals && !mana) return false;
   const s = stats();
@@ -2325,10 +2387,15 @@ function makeEnemy(member, i, depth = 0) {
   const base = MOBS[member.type];
   const e = { id: i, name: base.name, sprite: base.sprite, atkKey: base.sprite, hp: base.hp, atk: base.atk, def: base.def, spd: base.spd, xp: base.xp, tokens: base.tokens, drops: base.drops, traits: member.traits.slice(), elite: member.elite, alive: true, flash: 0, slash: 0, intent: 'attack', begged: false, poison: 0, frozen: 0 };
   if (e.traits.includes('armored')) e.def += 3;
-  if (e.elite) { e.hp = Math.round(e.hp * 1.6); e.atk += 2; e.xp *= 2; }
-  // Difficulty (raised after playtesting): mobs have 30% more health and hit 25% harder, and grow faster with your level.
-  const scale = 1 + (G.lvl - 1) * 0.17 + depth * 0.6;
-  e.hp = Math.round(e.hp * 1.45 * scale); e.atk = Math.round(e.atk * 1.4 * scale); e.xp = Math.round(e.xp * (1 + depth));
+  if (e.elite) { e.hp = Math.round(e.hp * 1.6); e.atk = e.atk * 1.15 + 1; e.xp *= 2; }
+  // Danger comes from the floor and how deep into it you are (stage 1 to the bosses), never from your level.
+  // So leveling up makes you stronger for real. Numbers per floor live in FLOORS (data.js).
+  const f = fd(), lerp = ([a, b]) => a + (b - a) * Math.max(0, Math.min(1, depth));
+  e.hp = Math.round(e.hp * lerp(f.hp)); e.atk = Math.round(e.atk * lerp(f.atk));
+  e.def = Math.round(e.def * fsize());
+  e.xp = Math.round(e.xp * (1 + depth) * fsize());
+  e.tokens = [Math.round(e.tokens[0] * fsize()), Math.round(e.tokens[1] * fsize())];
+  e.healer = !!base.healer; e.poisonHit = base.poison || 0;
   if (member.tutorial) { e.hp = 9; e.atk = 3; }
   e.maxHp = e.hp;
   const label = e.traits.map((t) => TRAITS[t].name).join(' ');
@@ -2336,9 +2403,14 @@ function makeEnemy(member, i, depth = 0) {
   return e;
 }
 
+let B_DEPTH = 0;
 function startBattle(mob) {
   moveHeld = null;
-  const enemies = mob.members.map((m, i) => makeEnemy(m, i, mob.depth || 0));
+  // Respawned mobs used to forget their depth and show up as weak as stage 1 mobs anywhere.
+  const depth = mob.depth != null ? mob.depth : (roomAt(FL, mob.x, mob.y) || {}).depth || 0;
+  const enemies = mob.members.map((m, i) => makeEnemy(m, i, depth));
+  B_DEPTH = depth;
+  if (mob.respawn) for (const e of enemies) e.respawn = true;
   beginBattle(enemies, mob);
   say(`<b>Fight!</b> ${esc(enemies.map((e) => e.full).join(', '))}`);
   if (mob.elite) bookie('An elite! Somebody up there just doubled their bet against you.');
@@ -2346,7 +2418,8 @@ function startBattle(mob) {
 }
 function startBossBattle(b) {
   const d = BOSSES[b.type];
-  const e = { id: 0, name: d.name, full: d.name, sprite: d.sprite, atkKey: b.type, bossId: b.id, bossType: b.type, hp: Math.round(d.hp * 2) + (G.lvl - 1) * 14, atk: d.atk + 2 + Math.floor((G.lvl - 1) / 2), def: d.def, spd: d.spd, xp: d.xp, tokens: d.tokens, drops: [], traits: [], boss: true, alive: true, flash: 0, slash: 0, intent: 'attack', begged: true, phase: 1, poison: 0, frozen: 0 };
+  // Bosses are built for their floor and don't grow with your level: about 10 to 14 turns, and you'll need to heal.
+  const e = { id: 0, name: d.name, full: d.name, sprite: d.sprite, atkKey: b.type, bossId: b.id, bossType: b.type, hp: d.hp, atk: d.atk, def: d.def, spd: d.spd, xp: d.xp, tokens: d.tokens, drops: [], traits: [], boss: true, alive: true, flash: 0, slash: 0, intent: 'attack', begged: true, phase: 1, poison: 0, frozen: 0 };
   e.maxHp = e.hp;
   beginBattle([e], null);
   bookie(d.announce);
@@ -2356,7 +2429,7 @@ function beginBattle(enemies, mob) {
   mode = 'battle';
   prompt = null;
   FX = { proj: null, pops: [], bursts: [], heroFlash: 0 };
-  B = { enemies, mob, phase: 'menu', turn: 0, buff: { ...(G.buff || {}) }, poison: 0, stolen: [], guard: false };
+  B = { enemies, mob, depth: mob ? B_DEPTH : 1, phase: 'menu', turn: 0, buff: { ...(G.buff || {}) }, poison: 0, stolen: [], guard: false };
   G.buff = null;
   for (const e of B.enemies) rollIntent(e);
   if (FL.rule.id === 'cowards') for (const e of B.enemies) if (!e.boss && !e.traits.includes('cowardly')) e.traits.push('cowardly');
@@ -2368,7 +2441,10 @@ function rollIntent(e) {
   const r = R.next();
   if (e.boss) e.intent = r < 0.45 ? 'attack' : r < 0.75 ? 'heavy' : 'fare';
   else e.intent = r < 0.68 ? 'attack' : r < 0.88 ? 'heavy' : 'defend';
+  // Floor 2 and below: some mobs patch up a badly hurt friend instead of attacking.
+  if (!e.boss && (e.healer || fd().healers) && B && hurtFriend(e) && R.chance(e.healer ? 0.6 : 0.25)) e.intent = 'heal';
 }
+function hurtFriend(e) { return B.enemies.filter((x) => x.alive && x !== e && x.hp < x.maxHp * 0.45).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0]; }
 function intentText(e) {
   if (!e.alive) return e.spared ? 'Spared' : 'Down';
   if (e.frozen > 0) return 'Frozen';
@@ -2376,7 +2452,8 @@ function intentText(e) {
   if (e.intent === 'attack') return 'Next: ' + a.name;
   if (e.intent === 'heavy') return 'Winding up: ' + a.heavy;
   if (e.intent === 'defend') return 'Defending';
-  return e.bossType === 'hoarder' ? 'Next: Grabby Hands' : 'Next: Fare Check';
+  if (e.intent === 'heal') return 'Next: Patch up a friend';
+  return 'Next: ' + ((BOSSES[e.bossType] || {}).special || 'Special');
 }
 
 function alive() { return B.enemies.filter((e) => e.alive); }
@@ -2440,7 +2517,7 @@ function fightOptions() {
   for (const id of G.order) {
     if (count(id) > 0 && ITEMS[id].type === 'bomb') {
       const mult = (G.race === 'gnome' ? 1.5 : 1) * (hasPerk('demo') ? 1.3 : 1);
-      items.push({ id: 'bomb:' + id, label: `${ITEMS[id].name} x${count(id)}`, type: 'BOMB', info: 'Hits every mob. Uses one up.', dmg: Math.round(ITEMS[id].dmg * mult), all: true, target: 'all', item: true });
+      items.push({ id: 'bomb:' + id, label: `${ITEMS[id].name} x${count(id)}`, type: 'BOMB', info: 'Hits every mob. Uses one up.', dmg: Math.round(ITEMS[id].dmg * mult * fsize()), all: true, target: 'all', item: true });
     }
   }
   const sk = cls().skill;
@@ -2528,7 +2605,7 @@ const HERO_C = { x: 52, y: 116 };
 function enemyBox(e) {
   const idx = B.enemies.indexOf(e);
   const n = B.enemies.length;
-  const pos = e.boss ? [[146, 18]] : n === 1 ? [[154, 38]] : n === 2 ? [[128, 40], [180, 36]] : [[112, 42], [154, 34], [196, 42]];
+  const pos = B.enemies[0].boss ? [[146, 18], [94, 50], [206, 50]] : n === 1 ? [[154, 38]] : n === 2 ? [[128, 40], [180, 36]] : [[112, 42], [154, 34], [196, 42]];
   const [x, y] = pos[idx] || pos[0];
   const size = e.boss ? 48 : 32;
   return { x, y, size, cx: x + size / 2, cy: y + size / 2 };
@@ -2557,11 +2634,21 @@ function hitEnemy(e, dmg, why = '') {
   say(`${why}${esc(e.full)} takes <b>${dmg}</b> damage.`);
   if (e.hp <= 0) killEnemy(e);
   else if (e.boss && e.phase === 1 && e.hp <= e.maxHp / 2) {
-    e.phase = 2; e.atk += 3;
-    bookie(e.bossType === 'hoarder' ? 'The Hoarder is getting desperate. Hold onto your stuff!' : 'FARE INCREASE! The King is angry now.');
+    e.phase = 2; e.atk = Math.round(e.atk * 1.2);
+    bookie(BOSSES[e.bossType].angry);
+    if (e.bossType === 'buffet') splitBlob(e);
   }
 }
 
+// The Buffet Blob splits off two Leftover Blobs when it gets angry (phase 2).
+function splitBlob(boss) {
+  const m = MINIONS.leftover;
+  for (let i = 0; i < 2 && B.enemies.length < 3; i++) {
+    const e = { id: B.enemies.length, name: m.name, full: m.name, sprite: m.sprite, atkKey: m.atkKey, hp: m.hp, maxHp: m.hp, atk: m.atk, def: m.def, spd: m.spd, xp: m.xp, tokens: m.tokens, drops: ['food_mystery'], traits: [], alive: true, flash: 0, slash: 0, intent: 'attack', begged: true, poison: 0, frozen: 0, minion: true };
+    B.enemies.push(e);
+  }
+  say(`${esc(boss.full)} splits! <b>Leftover Blobs</b> join the fight.`);
+}
 function killEnemy(e, how = 'kill') {
   e.alive = false; e.hp = 0;
   if (how === 'spare') { e.spared = true; return; }
@@ -2569,7 +2656,7 @@ function killEnemy(e, how = 'kill') {
   say(`${esc(e.full)} is defeated!`);
   if (!FL.tutorial) achieve('firstblood');
   if (e.traits.includes('explosive')) {
-    const d = 8 + G.lvl;
+    const d = Math.round(12 * fsize());
     G.hp -= d; flashHp();
     const b = enemyBox(e);
     burst(b.cx, b.cy, 'boom', '#f5c542');
@@ -2622,7 +2709,7 @@ async function doPlayer(action, targetId) {
     await fly(HERO_C, mid, 'bomb', '#5a5373', 420);
     burst(mid.x, mid.y, 'boom', '#f5c542');
     const mult = (G.race === 'gnome' ? 1.5 : 1) * (hasPerk('demo') ? 1.3 : 1);
-    for (const e of alive()) hitEnemy(e, it.dmg * mult);
+    for (const e of alive()) hitEnemy(e, it.dmg * mult * fsize());
   } else if (action.startsWith('use:')) {
     consume(action.slice(4));
   } else if (action === 'guard') {
@@ -2760,7 +2847,7 @@ async function enemyTurn() {
     }
     if (G.hp <= 0) break;
   }
-  if (B.poison > 0 && G.hp > 0) { G.hp -= 2; B.poison--; flashHp(); popHero('-2', '#b8e05a'); say('Poison stings. <b>2</b> damage.'); }
+  if (B.poison > 0 && G.hp > 0) { const pd = B.poisonDmg || Math.round(2 * fsize()); G.hp -= pd; B.poison--; if (!B.poison) B.poisonDmg = 0; flashHp(); popHero('-' + pd, '#b8e05a'); say(`${B.burn ? 'The grease burns' : 'Poison stings'}. <b>${pd}</b> damage.`); }
   for (const e of alive()) if (e.poison > 0 && G.hp > 0) { e.poison--; hitEnemy(e, 2 + Math.floor(stats().mag / 4), 'Venom! '); }
   for (const e of alive()) rollIntent(e);
   updateHud();
@@ -2782,6 +2869,36 @@ async function enemyAct(e) {
   if (e.intent === 'defend') { say(`${esc(e.full)} braces itself.`); return; }
   const atk = ATTACKS[e.atkKey] || ATTACKS.rat;
   const eb = enemyBox(e);
+  if (e.intent === 'heal') {
+    const f = hurtFriend(e);
+    if (f) {
+      const h = Math.round(f.maxHp * 0.3);
+      f.hp = Math.min(f.maxHp, f.hp + h);
+      const fb = enemyBox(f);
+      say(`${esc(e.full)} patches up ${esc(f.full)}. <b>+${h} HP</b>`);
+      pop(fb.cx, fb.y - 4, '+' + h, '#6bbf59');
+      return;
+    }
+  }
+  if (e.intent === 'fare' && e.bossType === 'frycook') {
+    say(`${esc(e.full)} uses <b>Grease Fire</b>!`);
+    await fly({ x: eb.cx, y: eb.cy }, HERO_C, 'blob', '#f5c542', 380);
+    const d = Math.max(1, Math.round(e.atk * 0.6 * fd().defK / (fd().defK + Math.max(0, heroDef()))));
+    G.hp -= d; flashHp(); popHero('-' + d, '#ff8a3a');
+    B.poison = 3; B.poisonDmg = Math.round(e.atk * 0.25); B.burn = true;
+    say(`You take <b>${d}</b> damage and catch fire! You'll burn for 3 turns.`);
+    return;
+  }
+  if (e.intent === 'fare' && e.bossType === 'buffet') {
+    say(`${esc(e.full)} goes back for a <b>Second Helping</b>!`);
+    const food = G.order.filter((id) => count(id) > 0 && ITEMS[id].type === 'food');
+    if (food.length) { const id = R.pick(food); removeItem(id); B.stolen.push(id); say(`It slurps up your ${esc(ITEMS[id].name)}! Beat it to get it back.`); }
+    const h = Math.round(e.maxHp * 0.05);
+    e.hp = Math.min(e.maxHp, e.hp + h);
+    pop(eb.cx, eb.y - 4, '+' + h, '#6bbf59');
+    say(`It heals <b>${h}</b>.`);
+    return;
+  }
   if (e.intent === 'fare') {
     if (e.bossType === 'hoarder') {
       say(`${esc(e.full)} uses <b>Grabby Hands</b>!`);
@@ -2809,7 +2926,8 @@ async function enemyAct(e) {
   if (G.race === 'fairy' && R.chance(0.15)) { popHero('MISS', '#4fd8e8'); say('You flutter out of the way!'); return; }
   // Defense softens a hit (each point cuts a bit less) but never cancels it, so mobs stay a threat with good gear.
   const raw = e.atk + R.int(0, 2);
-  let dmg = raw * 12 / (12 + Math.max(0, heroDef()));
+  const K = fd().defK;
+  let dmg = raw * K / (K + Math.max(0, heroDef()));
   if (e.intent === 'heavy') dmg *= 1.6;
   dmg = Math.max(1, Math.round(dmg));
   G.hp -= dmg;
@@ -2819,9 +2937,9 @@ async function enemyAct(e) {
   popHero('-' + dmg, '#ff5fa2');
   say(`You take <b>${dmg}</b> damage.`);
   if (dmg >= stats().maxHp * 0.25) bookie(R.pick(BOOKIE.hurt));
-  if (e.traits.includes('toxic') && R.chance(0.35)) {
+  if ((e.traits.includes('toxic') && R.chance(0.35)) || (e.poisonHit && R.chance(e.poisonHit))) {
     if (G.race === 'dwarf') say('Poison! Your dwarf gut shrugs it off.');
-    else { B.poison = 3; say('You are poisoned!'); }
+    else { B.poison = 3; B.burn = false; say('You are poisoned!'); }
   }
   if (e.traits.includes('greedy') && R.chance(0.3)) {
     const options = G.order.filter((id) => count(id) > 0 && ITEMS[id].type !== 'box' && !isEquipped(id));
@@ -2875,25 +2993,30 @@ function victory() {
   const s = stats();
   let xp = 0, tokens = 0;
   const drops = [];
+  // Grinding easy mobs pays less: half XP when you are 3+ levels past where this part of the floor expects
+  // you to be, a quarter at 6+. Respawned mobs also give half XP.
+  const [l0, l1] = fd().lvl, expect = l0 + (l1 - l0) * (B.depth || 0);
+  const over = G.lvl - expect, xpMult = over >= 6 ? 0.25 : over >= 3 ? 0.5 : 1;
+  const deep = G.floor >= 2 || G.lvl >= 5;
   for (const e of B.enemies) {
-    if (e.spared) { xp += Math.floor(e.xp / 2); continue; }
-    xp += e.xp;
+    const ex = e.xp * xpMult * (e.respawn ? 0.5 : 1);
+    if (e.spared) { xp += Math.floor(ex / 2); continue; }
+    xp += Math.max(1, Math.round(ex));
     tokens += R.int(e.tokens[0], e.tokens[1]) + 1;
-    // Drops (tightened after playtesting: too many potions, food and bombs piled up by the end of floor 1).
+    // Drops (cut again for the 10 floor plan: owner had too many leftover items and boxes).
     const scav = hasPerk('scavenger') ? 0.15 : 0;
-    if (e.drops.length && R.chance(0.6 + scav)) drops.push(R.pick(e.drops));
-    if (R.chance(0.08 + scav)) { const bonus = rollLoot(G.lvl >= 5 ? 'box_silver' : 'box_rusty').items[0]; if (bonus) for (let n = 0; n < bonus[1]; n++) drops.push(bonus[0]); }
-    if (R.chance(0.05 + scav / 2)) drops.push(G.lvl >= 6 && R.chance(0.3) ? 'box_silver' : 'box_rusty');
-    // Crafting materials drop more often now that boxes are rarer.
-    if (R.chance(0.55 + scav)) drops.push(R.pick(['j_wire', 'j_token', 'j_feather', 'j_jelly', 'j_tail', 'j_scrap']));
-    if (e.elite) { drops.push(G.lvl >= 5 ? 'box_gold' : 'box_silver', rollLoot(G.lvl >= 5 ? 'box_gold' : 'box_silver').items[0][0]); achieve('elite'); tag('brave'); }
+    if (e.drops.length && R.chance(0.45 + scav)) drops.push(R.pick(e.drops));
+    if (R.chance(0.05 + scav)) { const bonus = rollLoot(deep ? 'box_silver' : 'box_rusty').items[0]; if (bonus) for (let n = 0; n < bonus[1]; n++) drops.push(bonus[0]); }
+    if (R.chance(0.03 + scav / 2)) drops.push(deep && R.chance(0.3) ? 'box_silver' : 'box_rusty');
+    if (R.chance(0.35 + scav)) drops.push(R.pick(['j_wire', 'j_token', 'j_feather', 'j_jelly', 'j_tail', 'j_scrap']));
+    if (e.elite) { drops.push(deep ? 'box_gold' : 'box_silver', rollLoot(deep ? 'box_gold' : 'box_silver').items[0][0]); achieve('elite'); tag('brave'); }
   }
   const boss = B.enemies.find((e) => e.boss);
   say('<span class="good">Victory!</span>');
   if (boss) {
     G.bossesDead.push(boss.bossId);
     objIndex.delete(key(FL.bosses.find((b) => b.id === boss.bossId)));
-    drops.push('box_gold', boss.bossType === 'king' ? 'w_bar' : 'scroll_fireball');
+    drops.push('box_gold', tierId(BOSSES[boss.bossType].drop || 'box_silver'));
     G.odds *= 0.75;
     tag('brave');
     achieve(boss.bossType);
@@ -2980,13 +3103,13 @@ overlayHandlers.reload = () => {
   save();
 };
 
-function showFloorClear() {
+function showFloorClear(note = '') {
   mode = 'title'; lowHpPulse();
   B = null; prompt = null;
   controls.innerHTML = '';
   const mood = docMood();
   const docEnd = {
-    friend: 'Doc packs her bag. "Floor 2? I\'m coming with you. Someone has to keep you alive."',
+    friend: `Doc packs her bag. "Floor ${G.floor + 1}? I'm coming with you. Someone has to keep you alive."`,
     warm: 'Doc waves from the safe room door. "Don\'t die down there. I mean it."',
     neutral: 'Doc shrugs. "Good luck, I guess."',
     scared: 'Doc locks the safe room door as you pass. She\'s telling the others to watch out for you.',
@@ -2994,7 +3117,7 @@ function showFloorClear() {
   }[mood];
   const mins = Math.floor(G.playTime / 60);
   showOverlay(`
-    <p class="banner gold" style="margin-top:24px">FLOOR 1 CLEARED!</p>
+    <p class="banner gold" style="margin-top:24px">FLOOR ${G.floor} CLEARED!</p>
     <div class="bookie"><img src="${sprite('bookie').toDataURL()}" alt=""><p><b style="color:var(--pink)">BOOKIE:</b> ${esc(G.name)} takes the stairs! Odds now ${oddsText()}. Somebody up there is getting rich.</p></div>
     <div class="stat-list">
       <span>Level <b>${G.lvl}</b></span><span>Time <b>${mins} min</b></span>
@@ -3002,33 +3125,66 @@ function showFloorClear() {
       <span>Boxes opened <b>${G.boxesOpened}</b></span><span>Deaths <b>${G.deaths}</b></span>
     </div>
     <p>${esc(G.doc.met ? docEnd : 'You never met Doc. Maybe next time.')}</p>
-    <p class="muted">Floor 2, The Food Court, is coming in a future build. Try another hero in a different save slot to see a different floor, rule and Doc.</p>
-    <button class="btn" data-act="quit">BACK TO TITLE</button>`);
+    ${buybackHtml(note)}
+    ${G.floor < LAST_FLOOR
+    ? `<p>Next: <b style="color:var(--gold)">Floor ${G.floor + 1}, ${esc(floorDef(G.floor + 1).name)}</b>. New mobs, new bosses, and tougher everything. Your hero, items and tokens come with you.</p>
+      <button class="btn gold" data-act="downstairs">TAKE THE STAIRS TO FLOOR ${G.floor + 1}</button>
+      <button class="btn grey" data-act="quit">BACK TO TITLE</button>`
+    : `<p class="muted">Floor ${G.floor + 1} is coming in a future build. Try another hero in a different save slot to see a different floor, rule and Doc.</p>
+      <button class="btn" data-act="quit">BACK TO TITLE</button>`}`);
+}
+// The Patron buyback at the stairs: sell every piece of junk in one tap before going down.
+function buybackHtml(note) {
+  const list = junkList().filter((id) => sellableCount(id) > 0);
+  const v = list.reduce((a, id) => a + sellableCount(id) * sellPrice(id), 0);
+  if (note) return `<p class="note good">${note}</p>`;
+  if (!v) return '';
+  return `<div class="item"><div class="txt"><span class="nm" style="color:var(--gold)">PATRON BUYBACK</span>
+    <span class="ds">BOOKIE will buy all your junk (${list.reduce((a, id) => a + sellableCount(id), 0)} items: weaker gear, spare copies, scrolls you know) for ${v} tokens before you go down.</span></div>
+    <button class="act gold" data-act="buyback">Sell · ${v}</button></div>`;
+}
+// Go down to the next floor: a new map, mobs, bosses and rule. Your hero, bag, gear and tokens stay.
+function goDownstairs() {
+  if (G.floor >= LAST_FLOOR || !G.cleared) return;
+  G.floor++;
+  G.opened = []; G.killed = []; G.bossesDead = []; G.cleared = false; G.seen = '';
+  G.respawnT = 0; G.spawnCount = 0; G.shopBought = {}; G.boxBuys = {};
+  G.guide = 0; G.safeGuide = 0; G.radar = 0; guidePath = null; safePath = null;
+  buildFloor();
+  G.pos = { ...FL.start };
+  enterMap(true);
+  achieve('floor' + G.floor);
+  save();
 }
 
 // ---------- Drawing ----------
+// Each floor has its own colors (FLOORS[n].colors in data.js).
+function TILE_C() { return (G && G.floor >= 1 ? fd() : FLOORS[1]).colors; }
 function drawTile(x, y, sx, sy) {
   if (!seen(x, y)) { ctx.fillStyle = '#0a0712'; ctx.fillRect(sx, sy, 16, 16); return; }
   const t = tileAt(FL, x, y);
   if (t === T.WALL) {
     const below = tileAt(FL, x, y + 1);
     if (below !== T.WALL) {
-      ctx.fillStyle = '#3b2a4d'; ctx.fillRect(sx, sy, 16, 16);
-      ctx.fillStyle = '#5a5373'; ctx.fillRect(sx, sy, 16, 2);
-      ctx.fillStyle = '#2c2040';
+      const w = TILE_C().wall;
+      ctx.fillStyle = w[0]; ctx.fillRect(sx, sy, 16, 16);
+      ctx.fillStyle = w[1]; ctx.fillRect(sx, sy, 16, 2);
+      ctx.fillStyle = w[2];
       ctx.fillRect(sx, sy + 7, 16, 1); ctx.fillRect(sx + ((x % 2) ? 4 : 11), sy + 2, 1, 5); ctx.fillRect(sx + ((x % 2) ? 11 : 4), sy + 8, 1, 5);
-      ctx.fillStyle = '#241a36'; ctx.fillRect(sx, sy + 13, 16, 3);
+      ctx.fillStyle = w[3]; ctx.fillRect(sx, sy + 13, 16, 3);
     } else {
       ctx.fillStyle = '#140e20'; ctx.fillRect(sx, sy, 16, 16);
     }
     return;
   }
   if (t === T.SAFE) {
-    ctx.fillStyle = (x + y) % 2 ? '#8a4b2a' : '#9a5636'; ctx.fillRect(sx, sy, 16, 16);
-    ctx.fillStyle = '#b8693a'; ctx.fillRect(sx + 1, sy + 1, 14, 1);
+    const c = TILE_C().safe;
+    ctx.fillStyle = (x + y) % 2 ? c[0] : c[1]; ctx.fillRect(sx, sy, 16, 16);
+    ctx.fillStyle = c[2]; ctx.fillRect(sx + 1, sy + 1, 14, 1);
   } else {
-    ctx.fillStyle = (x + y) % 2 ? '#5a5373' : '#635c7d'; ctx.fillRect(sx, sy, 16, 16);
-    ctx.fillStyle = '#4e4866'; ctx.fillRect(sx, sy, 16, 1); ctx.fillRect(sx, sy, 1, 16);
+    const c = TILE_C().floor;
+    ctx.fillStyle = (x + y) % 2 ? c[0] : c[1]; ctx.fillRect(sx, sy, 16, 16);
+    ctx.fillStyle = c[2]; ctx.fillRect(sx, sy, 16, 1); ctx.fillRect(sx, sy, 1, 16);
     const d = FL.decor[y * FL.w + x];
     if (d === 1) { ctx.fillStyle = '#3a6ea5'; ctx.fillRect(sx + 4, sy + 9, 8, 3); ctx.fillStyle = '#6aa0d8'; ctx.fillRect(sx + 5, sy + 9, 3, 1); }
     if (d === 2) { ctx.fillStyle = '#3b2a4d'; ctx.fillRect(sx + 3, sy + 4, 1, 5); ctx.fillRect(sx + 4, sy + 8, 4, 1); ctx.fillRect(sx + 8, sy + 9, 1, 3); }
@@ -3433,3 +3589,6 @@ Object.assign(overlayHandlers, {
   setback: () => { if (setFrom === 'menu') openMenu(true); else showTitle(); },
 });
 flushStats();
+
+// Test hook for automated playtests only: open the game with ?debug to reach these from the browser console.
+if (location.search.includes('debug')) window.__LO = { G: () => G, FL: () => FL, B: () => B, startBattle, startBossBattle, doPlayer, stats, shopStock, priceOf, upgCost, canUpgrade, gearStats, save, makeEnemy };

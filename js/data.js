@@ -187,9 +187,9 @@ export const RARITY = {
 export const RARITY_ORDER = ['patron', 'gold', 'silver', 'rusty', 'common'];
 
 // type: potion | food | bomb | scroll | junk | box, or a gear slot: weapon | head | shirt | armor | wrist | shoes
-export const ITEMS = {
-  potion_heal: { name: 'Health Potion', type: 'potion', rarity: 'common', heal: 25, price: 8, desc: 'Heals 25.' },
-  potion_big: { name: 'Big Health Potion', type: 'potion', rarity: 'silver', heal: 60, desc: 'Heals 60.' },
+const BASE_ITEMS = {
+  potion_heal: { name: 'Health Potion', type: 'potion', rarity: 'common', heal: 25, healPct: 30, price: 8, desc: 'Heals 30% of your max HP (at least 25).' },
+  potion_big: { name: 'Big Health Potion', type: 'potion', rarity: 'silver', heal: 60, healPct: 60, desc: 'Heals 60% of your max HP (at least 60).' },
   potion_mana: { name: 'Mana Potion', type: 'potion', rarity: 'common', mana: 12, price: 10, desc: 'Restores 12 MP.' },
   potion_mana_big: { name: 'Big Mana Potion', type: 'potion', rarity: 'silver', mana: 35, price: 26, desc: 'Restores 35 MP.' },
   potion_path: { name: 'Boss Compass Potion', type: 'potion', rarity: 'rusty', guide: 120, price: 15, desc: 'Draws the way to the nearest boss on your maps for 120 seconds of play.' },
@@ -198,6 +198,11 @@ export const ITEMS = {
   potion_mystery: { name: 'Mystery Potion', type: 'potion', rarity: 'rusty', mystery: true, desc: 'Who knows? Not BOOKIE.' },
   food_pretzel: { name: 'Stale Pretzel', type: 'food', rarity: 'common', heal: 8, desc: 'Heals 8. Crunchy in a bad way.' },
   food_hotdog: { name: 'Station Hot Dog', type: 'food', rarity: 'rusty', heal: 16, desc: 'Heals 16. Do not ask what is in it.' },
+  // Floor 2 food: heals a little and gives a buff for your next fight. Some of it has gone bad.
+  food_taco: { name: 'Hot Sauce Taco', type: 'food', rarity: 'rusty', heal: 20, buff: { atk: 4 }, desc: 'Heals 20 and +4 attack for your next fight.' },
+  food_smoothie: { name: 'Kale Smoothie', type: 'food', rarity: 'rusty', heal: 20, buff: { def: 4 }, desc: 'Heals 20 and +4 defense for your next fight.' },
+  food_espresso: { name: 'Triple Espresso', type: 'food', rarity: 'silver', heal: 10, mana: 10, buff: { spd: 4 }, desc: 'Heals 10, +10 MP and +4 speed for your next fight.' },
+  food_mystery: { name: 'Mystery Meat Skewer', type: 'food', rarity: 'common', heal: 30, spoil: 0.35, desc: 'Heals 30. Has a 35% chance it went bad and poisons you instead.' },
   bomb: { name: 'Junk Bomb', type: 'bomb', rarity: 'common', dmg: 12, desc: 'Hits every mob for 12.' },
   bomb_big: { name: 'Pipe Bomb Deluxe', type: 'bomb', rarity: 'gold', dmg: 26, desc: 'Hits every mob for 26.' },
   w_pipe: { name: 'Rusty Pipe', type: 'weapon', rarity: 'rusty', atk: 2, desc: '+2 attack.' },
@@ -271,6 +276,34 @@ export const ITEMS = {
   box_patron: { name: "Patron's Pick", type: 'box', rarity: 'patron', desc: 'A gift from a Patron. Probably fine.' },
 };
 
+// Floor tagged gear: "w_pipe@2" is a Rusty Pipe found on Floor 2. Its stats and price grow with the floor
+// (see FLOORS size below), so gear from deeper floors replaces older gear. Floor 1 gear has no tag.
+const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+const SCALED = ['atk', 'def', 'mag', 'spd', 'maxHp', 'maxMp'];
+const GEAR_KINDS = ['weapon', 'head', 'neck', 'shirt', 'armor', 'back', 'wrist', 'ring', 'legs', 'shoes'];
+const tierCache = new Map();
+function tierItem(key) {
+  if (tierCache.has(key)) return tierCache.get(key);
+  const [base, t] = key.split('@');
+  const b = BASE_ITEMS[base], tier = Number(t);
+  let it;
+  if (b && GEAR_KINDS.includes(b.type) && tier >= 2 && tier <= 10) {
+    const m = floorSize(tier);
+    it = { ...b, base, tier, name: b.name + ' ' + ROMAN[tier], price: Math.round((b.price || RARITY_PRICE[b.rarity] || 6) * m) };
+    for (const k of SCALED) if (b[k] > 0) it[k] = Math.max(b[k] + 1, Math.round(b[k] * m));
+    const parts = SCALED.filter((k) => it[k]).map((k) => (it[k] > 0 ? '+' : '') + it[k] + ' ' + { atk: 'attack', def: 'defense', mag: 'magic', spd: 'speed', maxHp: 'HP', maxMp: 'MP' }[k]);
+    it.desc = 'Floor ' + tier + ' gear: ' + parts.join(', ') + '.';
+  }
+  tierCache.set(key, it);
+  return it;
+}
+export const ITEMS = new Proxy(BASE_ITEMS, {
+  get(t, k) { return typeof k === 'string' && !(k in t) && k.includes('@') ? tierItem(k) : t[k]; },
+  has(t, k) { return k in t || (typeof k === 'string' && k.includes('@') && !!tierItem(k)); },
+});
+// The plain item id under a floor tag ("w_pipe@2" -> "w_pipe").
+export function baseId(id) { return String(id).split('@')[0]; }
+
 // What each loot box tier can hold. [itemId, weight, minCount, maxCount]
 export const LOOT = {
   box_rusty: [['potion_heal', 5, 1, 2], ['food_pretzel', 4, 1, 3], ['food_hotdog', 2, 1, 1], ['bomb', 3, 1, 2], ['potion_mystery', 2, 1, 1], ['w_pipe', 1, 1, 1], ['a_vest', 1, 1, 1], ['j_wire', 3, 1, 2], ['potion_mana', 2, 1, 1], ['potion_radar', 2, 1, 1], ['potion_path', 2, 1, 1], ['potion_safe', 2, 1, 1], ['scroll_venom', 1, 1, 1], ['scroll_iron', 1, 1, 1], ['h_cap', 1, 1, 1], ['s_tee', 1, 1, 1], ['r_band', 1, 1, 1], ['f_flops', 1, 1, 1], ['j_feather', 2, 1, 2], ['n_whistle', 1, 1, 1], ['g_mood', 1, 1, 1], ['l_shorts', 1, 1, 1], ['k_towel', 1, 1, 1]],
@@ -300,10 +333,23 @@ export const MOBS = {
   bat: { name: 'Tunnel Bat', sprite: 'bat', hp: 9, atk: 5, def: 0, spd: 10, xp: 5, tokens: [0, 3], drops: ['j_feather', 'j_tail'] },
   mannequin: { name: 'Lost Mannequin', sprite: 'mannequin', hp: 20, atk: 5, def: 3, spd: 2, xp: 9, tokens: [2, 5], drops: ['j_wire', 'j_scrap'] },
   trashcan: { name: 'Trash Can Mimic', sprite: 'trashcan', hp: 18, atk: 6, def: 3, spd: 4, xp: 9, tokens: [2, 6], drops: ['j_scrap', 'j_token', 'j_jelly'] },
+  // Floor 2: The Food Court. healer: may patch up a hurt friend instead of attacking. poison: chance to poison on hit.
+  nugget: { name: 'Nugget Swarm', sprite: 'nugget', hp: 9, atk: 5, def: 0, spd: 9, xp: 5, tokens: [0, 3], drops: ['j_feather', 'food_mystery'] },
+  fizz: { name: 'Fizz Cup', sprite: 'fizz', hp: 12, atk: 5, def: 1, spd: 6, xp: 6, tokens: [1, 4], healer: true, drops: ['j_jelly', 'food_espresso'] },
+  meatball: { name: 'Rolling Meatball', sprite: 'meatball', hp: 19, atk: 6, def: 3, spd: 2, xp: 9, tokens: [2, 5], drops: ['j_scrap', 'food_mystery'] },
+  busboy: { name: 'Zombie Busboy', sprite: 'busboy', hp: 16, atk: 6, def: 2, spd: 4, xp: 8, tokens: [2, 6], healer: true, drops: ['j_token', 'j_wire', 'food_taco'] },
+  pizza: { name: 'Cold Pizza Slice', sprite: 'pizza', hp: 12, atk: 5, def: 1, spd: 5, xp: 6, tokens: [1, 4], poison: 0.25, drops: ['j_tail', 'food_smoothie'] },
 };
 export const BOSSES = {
-  king: { name: 'The Turnstile King', sprite: 'king', hp: 95, atk: 9, def: 3, spd: 4, xp: 60, tokens: [30, 45], intro: '"No ticket? No exit. No mercy."', announce: 'Ladies, gentlemen and billionaires: THE TURNSTILE KING!' },
-  hoarder: { name: 'The Lost and Found Hoarder', sprite: 'hoarder', hp: 80, atk: 8, def: 4, spd: 5, xp: 55, tokens: [25, 40], intro: '"Finders keepers. Losers... also mine."', announce: 'From the depths of the lost property office: THE HOARDER!' },
+  // Boss stats are set for their floor and do not grow with your level (see FLOORS).
+  king: { name: 'The Turnstile King', sprite: 'king', hp: 230, atk: 19, def: 5, spd: 4, xp: 120, tokens: [30, 45], drop: 'w_bar', special: 'Fare Check', angry: 'FARE INCREASE! The King is angry now.', intro: '"No ticket? No exit. No mercy."', announce: 'Ladies, gentlemen and billionaires: THE TURNSTILE KING!' },
+  hoarder: { name: 'The Lost and Found Hoarder', sprite: 'hoarder', hp: 210, atk: 17, def: 6, spd: 5, xp: 110, tokens: [25, 40], drop: 'scroll_fireball', special: 'Grabby Hands', angry: 'The Hoarder is getting desperate. Hold onto your stuff!', intro: '"Finders keepers. Losers... also mine."', announce: 'From the depths of the lost property office: THE HOARDER!' },
+  frycook: { name: 'The Fry Cook Tyrant', sprite: 'frycook', hp: 300, atk: 25, def: 7, spd: 5, xp: 230, tokens: [45, 65], drop: 'w_mic', special: 'Grease Fire', angry: 'The fryer is boiling over! The Tyrant is furious!', intro: '"Order up! You\'re the order."', announce: 'Straight from the grill of doom: THE FRY COOK TYRANT!' },
+  buffet: { name: 'The Buffet Blob', sprite: 'buffet', hp: 320, atk: 24, def: 6, spd: 3, xp: 230, tokens: [45, 65], drop: 'a_suit', special: 'Second Helping', angry: 'The Blob is splitting! Leftovers incoming!', intro: '"All you can eat. And I can eat YOU."', announce: 'It ate the salad bar. It ate the sneeze guard. THE BUFFET BLOB!' },
+};
+// Small blobs the Buffet Blob splits off. Their stats are set for Floor 2.
+export const MINIONS = {
+  leftover: { name: 'Leftover Blob', sprite: 'slime', atkKey: 'slime', hp: 35, atk: 12, def: 3, spd: 3, xp: 20, tokens: [3, 6] },
 };
 
 // What each mob throws at you. proj is the shape drawn flying across the battle screen.
@@ -318,6 +364,13 @@ export const ATTACKS = {
   trashcan: { name: 'Garbage Spew', heavy: 'Lid Slam', proj: 'junk', color: '#8b84a3' },
   king: { name: 'Fare Card Fling', heavy: 'Turnstile Spin', proj: 'bar', color: '#8b84a3' },
   hoarder: { name: 'Junk Avalanche', heavy: 'Umbrella Storm', proj: 'junk', color: '#b8693a' },
+  nugget: { name: 'Crumb Spray', heavy: 'Deep Fried Pileup', proj: 'blob', color: '#f5c542' },
+  fizz: { name: 'Soda Spray', heavy: 'Sugar Rush Blast', proj: 'blob', color: '#c8334a' },
+  meatball: { name: 'Sauce Splat', heavy: 'Rolling Crush', proj: 'blob', color: '#8a4b2a' },
+  busboy: { name: 'Tray Toss', heavy: 'Dish Tub Dump', proj: 'bar', color: '#e8dcc0' },
+  pizza: { name: 'Cheese String', heavy: 'Crust Slap', proj: 'bone', color: '#f5c542' },
+  frycook: { name: 'Spatula Smack', heavy: 'Deep Fryer Dunk', proj: 'bar', color: '#f5c542' },
+  buffet: { name: 'Gravy Wave', heavy: 'Belly Flop', proj: 'blob', color: '#b8e05a' },
 };
 
 // Moves you can learn from scrolls, on top of your class skill.
@@ -345,7 +398,31 @@ export const FLOOR_RULES = [
   { id: 'doubleloot', name: 'Double Loot', text: 'Every chest holds twice the loot. Greed is good TV.' },
   { id: 'cowards', name: 'Cowards Night', text: 'Every mob begs for mercy when hurt. Will you show any?' },
   { id: 'hypefest', name: 'Hype Fest', text: 'The audience is hyped. Hype builds twice as fast.' },
+  { id: 'happyhour', name: 'Happy Hour', text: 'Penny is running a special. Everything in her shop is 25% off.' },
+  { id: 'allyoucaneat', name: 'All You Can Eat', text: 'Food heals twice as much on this floor. Dig in.' },
 ];
+
+// ---------- Floors ----------
+// One row per floor. Danger comes from the floor you are on, not your level.
+// size: how big gear, prices, tokens and bombs are (Floor 1 = 1). hp and atk: how much tougher than their base
+// stats mobs are at the start of the floor and at the bosses. defK: the number in the defense formula
+// (damage = hit x defK / (defK + defense)), so stacking defense can't make you untouchable deeper down.
+// lvl: the level a normal player has at the start and end of the floor (mobs give less XP if you are well past it).
+// upgCap: highest gear upgrade allowed on that floor. shopFloor: Penny's shelves unlock by floor.
+export const FLOORS = {
+  1: { name: 'The Lobby', hp: [1.5, 4.5], atk: [1.4, 3.5], defK: 12, lvl: [1, 6], upgCap: 2,
+    mobs: ['slime', 'rat', 'gremlin', 'pigeon', 'roach', 'bat', 'mannequin', 'trashcan'], bosses: ['king', 'hoarder'],
+    rules: ['doubleloot', 'cowards', 'hypefest'], shop: [],
+    colors: { floor: ['#5a5373', '#635c7d', '#4e4866'], wall: ['#3b2a4d', '#5a5373', '#2c2040', '#241a36'], safe: ['#8a4b2a', '#9a5636', '#b8693a'] } },
+  2: { name: 'The Food Court', hp: [3.6, 6.2], atk: [3.1, 4.2], defK: 18, lvl: [6, 9], upgCap: 3,
+    mobs: ['nugget', 'fizz', 'meatball', 'busboy', 'pizza', 'rat', 'pigeon', 'trashcan'], bosses: ['frycook', 'buffet'],
+    rules: ['doubleloot', 'hypefest', 'happyhour', 'allyoucaneat'], shop: ['food_taco', 'food_smoothie', 'food_espresso'], healers: true,
+    colors: { floor: ['#e8dcc0', '#c9c3da', '#b7aecb'], wall: ['#7a1c2e', '#c8334a', '#5a1422', '#3e0e18'], safe: ['#3a6ea5', '#4477b0', '#6aa0d8'] } },
+};
+export const LAST_FLOOR = 2; // the deepest floor built so far
+// Gear, shop prices, tokens and bombs grow 40% per floor.
+export function floorSize(n) { return 1 + 0.4 * (Math.max(1, n) - 1); }
+export function floorDef(n) { return FLOORS[Math.max(1, Math.min(LAST_FLOOR, n || 1))]; }
 
 export const ACHIEVEMENTS = {
   firstblood: { name: 'First Blood', text: 'You killed something. The audience claps politely.', reward: 'box_rusty' },
@@ -356,6 +433,9 @@ export const ACHIEVEMENTS = {
   elite: { name: 'Punching Up', text: 'You beat an elite mob.', reward: 'box_silver' },
   king: { name: 'Fare Evasion', text: 'You dethroned the Turnstile King.', reward: 'box_gold' },
   hoarder: { name: 'Spring Cleaning', text: 'You cleared out the Lost and Found Hoarder.', reward: 'box_gold' },
+  frycook: { name: 'Kitchen Closed', text: 'You shut down the Fry Cook Tyrant.', reward: 'box_gold' },
+  buffet: { name: 'Clean Plate', text: 'You finished the Buffet Blob. All of it.', reward: 'box_gold' },
+  floor2: { name: 'Going Down', text: 'You took the stairs to Floor 2.', reward: 'box_silver' },
 };
 
 export const BOOKIE = {
@@ -384,12 +464,12 @@ export const STAT_NAMES = { atk: 'ATK', def: 'DEF', mag: 'MAG', spd: 'SPD', luck
 // Shop prices by rarity when an item has no price of its own. Selling pays half.
 export const RARITY_PRICE = { common: 6, rusty: 12, silver: 28, gold: 60, patron: 110 };
 
-// Penny's shop gets better as you level up. Each tier unlocks at a level.
+// Penny's shop gets better on deeper floors. Each tier needs both its floor and its level. Patron boxes are never sold.
 export const SHOP_TIERS = [
-  { lvl: 1, rarity: 'rusty', basics: ['potion_heal', 'potion_mana', 'potion_radar', 'potion_path', 'potion_safe', 'food_hotdog', 'bomb', 'box_rusty'], scrolls: ['scroll_venom', 'scroll_iron'] },
-  { lvl: 3, rarity: 'silver', basics: ['potion_big', 'potion_mana_big', 'box_silver'], scrolls: ['scroll_frost', 'scroll_mend', 'scroll_leech'] },
-  { lvl: 5, rarity: 'gold', basics: ['bomb_big', 'box_gold'], scrolls: ['scroll_fireball'] },
-  { lvl: 8, rarity: 'patron', basics: ['box_patron'], scrolls: ['scroll_lightning'] },
+  { lvl: 1, floor: 1, rarity: 'rusty', basics: ['potion_heal', 'potion_mana', 'potion_radar', 'potion_path', 'potion_safe', 'food_hotdog', 'bomb', 'box_rusty'], scrolls: ['scroll_venom', 'scroll_iron'] },
+  { lvl: 3, floor: 2, rarity: 'silver', basics: ['potion_big', 'potion_mana_big', 'box_silver'], scrolls: ['scroll_frost', 'scroll_mend', 'scroll_leech'] },
+  { lvl: 5, floor: 4, rarity: 'gold', basics: ['bomb_big', 'box_gold'], scrolls: ['scroll_fireball'] },
+  { lvl: 8, floor: 7, rarity: 'patron', basics: [], scrolls: ['scroll_lightning'] },
 ];
 
 // Crafting bench recipes. need lists items used up. lvl is when the recipe unlocks.
