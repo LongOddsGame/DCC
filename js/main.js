@@ -2056,7 +2056,7 @@ function consume(id) {
 // Potion cooldown: one clock of 15 real seconds, on the map, in the bag and in fights alike.
 // Only the pause menu (or leaving the app) stops it. Screens that show it refresh every second.
 // Mob Radar is not a drink for healing, so it has no cooldown.
-const POTION_CD = 15;
+const POTION_CD = 10;
 function cooled(id) { return ITEMS[id].type === 'potion' && !ITEMS[id].radar && !ITEMS[id].guide; }
 // True when an item would only heal HP or MP you already have full (owner: don't let me eat at full HP).
 function noNeed(id) {
@@ -2232,8 +2232,8 @@ function makeEnemy(member, i, depth = 0) {
   if (e.traits.includes('armored')) e.def += 3;
   if (e.elite) { e.hp = Math.round(e.hp * 1.6); e.atk += 2; e.xp *= 2; }
   // Difficulty (raised after playtesting): mobs have 30% more health and hit 25% harder, and grow faster with your level.
-  const scale = 1 + (G.lvl - 1) * 0.15 + depth * 0.6;
-  e.hp = Math.round(e.hp * 1.3 * scale); e.atk = Math.round(e.atk * 1.25 * scale); e.xp = Math.round(e.xp * (1 + depth));
+  const scale = 1 + (G.lvl - 1) * 0.17 + depth * 0.6;
+  e.hp = Math.round(e.hp * 1.45 * scale); e.atk = Math.round(e.atk * 1.4 * scale); e.xp = Math.round(e.xp * (1 + depth));
   if (member.tutorial) { e.hp = 9; e.atk = 3; }
   e.maxHp = e.hp;
   const label = e.traits.map((t) => TRAITS[t].name).join(' ');
@@ -2251,7 +2251,7 @@ function startBattle(mob) {
 }
 function startBossBattle(b) {
   const d = BOSSES[b.type];
-  const e = { id: 0, name: d.name, full: d.name, sprite: d.sprite, atkKey: b.type, bossId: b.id, bossType: b.type, hp: Math.round(d.hp * 1.8) + (G.lvl - 1) * 12, atk: d.atk + 1 + Math.floor((G.lvl - 1) / 2), def: d.def, spd: d.spd, xp: d.xp, tokens: d.tokens, drops: [], traits: [], boss: true, alive: true, flash: 0, slash: 0, intent: 'attack', begged: true, phase: 1, poison: 0, frozen: 0 };
+  const e = { id: 0, name: d.name, full: d.name, sprite: d.sprite, atkKey: b.type, bossId: b.id, bossType: b.type, hp: Math.round(d.hp * 2) + (G.lvl - 1) * 14, atk: d.atk + 2 + Math.floor((G.lvl - 1) / 2), def: d.def, spd: d.spd, xp: d.xp, tokens: d.tokens, drops: [], traits: [], boss: true, alive: true, flash: 0, slash: 0, intent: 'attack', begged: true, phase: 1, poison: 0, frozen: 0 };
   e.maxHp = e.hp;
   beginBattle([e], null);
   bookie(d.announce);
