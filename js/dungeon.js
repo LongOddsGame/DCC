@@ -145,8 +145,10 @@ export function generateFloor(seed, floor, opts = {}) {
   const booths = safeRooms.map((r) => place(r, { x: Math.min(r.cx + 2, r.x + r.w - 1), y: r.y + 1 }));
   const benches = safeRooms.map((r) => place(r, { x: Math.max(r.cx - 2, r.x), y: r.y + 1 }));
   const shops = safeRooms.filter((r) => r.w >= 3 && r.h >= 3).map((r) => place(r, { x: r.x + r.w - 1, y: r.y + r.h - 1 }));
+  // A bed in every safe room: sleep in it to restore HP and MP for free.
+  const beds = safeRooms.map((r) => place(r, { x: r.x, y: r.y + r.h - 1 }));
 
-  const taken = new Set([key(stairs), ...bosses.map(key), key(doc), ...booths.map(key), ...benches.map(key), ...shops.map(key), key({ x: start.cx, y: start.cy }), ...gates.map(key)]);
+  const taken = new Set([key(stairs), ...bosses.map(key), key(doc), ...booths.map(key), ...benches.map(key), ...shops.map(key), ...beds.map(key), key({ x: start.cx, y: start.cy }), ...gates.map(key)]);
   const freeSpot = (room) => {
     for (let i = 0; i < 40; i++) {
       const p = { x: rng.int(room.x, room.x + room.w - 1), y: rng.int(room.y, room.y + room.h - 1) };
@@ -208,7 +210,7 @@ export function generateFloor(seed, floor, opts = {}) {
   for (let i = 0; i < W * H; i++) if (tiles[i] === T.FLOOR && rng.chance(0.03)) decor[i] = rng.int(1, 3);
 
   const rule = rng.pick(FLOOR_RULES);
-  return { w: W, h: H, tiles, decor, rooms, stages, gates, start: { x: start.cx, y: start.cy }, stairs, bosses, doc, booths, benches, shops, safeRoom, safeRooms, chests, mobs, rule, far, dist };
+  return { w: W, h: H, tiles, decor, rooms, stages, gates, start: { x: start.cx, y: start.cy }, stairs, bosses, doc, booths, benches, shops, beds, safeRoom, safeRooms, chests, mobs, rule, far, dist };
 }
 
 // Which stage (0 to 3) a tile is in.
@@ -252,7 +254,7 @@ export function tutorialFloor() {
   const off = { x: -9, y: -9 };
   return {
     w, h, tiles, decor: new Uint8Array(w * h), rooms, start: { x: 2, y: 3 }, stairs: { x: 24, y: 3 }, bosses: [],
-    doc: off, booths: [{ x: 19, y: 1 }], benches: [{ x: 17, y: 5 }], shops: [{ x: 22, y: 5 }], safeRoom: rooms[2], safeRooms: [rooms[2]],
+    doc: off, booths: [{ x: 19, y: 1 }], benches: [{ x: 17, y: 5 }], shops: [{ x: 22, y: 5 }], beds: [{ x: 22, y: 1 }], safeRoom: rooms[2], safeRooms: [rooms[2]],
     chests: [{ id: 't0', x: 10, y: 2, tier: 'box_silver' }],
     mobs: [{ id: 't1', x: 13, y: 4, members: [{ type: 'rat', traits: ['cowardly'], elite: false, tutorial: true }], elite: false, still: true, depth: 0 }],
     rule: { id: 'tutorial', name: 'Practice', text: 'Nothing here can really hurt you. Probably.' }, tutorial: true, far: 1,

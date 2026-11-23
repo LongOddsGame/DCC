@@ -1318,7 +1318,7 @@ const TUT_LINES = {
   gotbox: 'Loot boxes can only be opened in a safe room. Keep heading right.',
   mob: 'That Training Rat is a mob. Walk into it to fight. Mobs throw things at you, so watch the screen.',
   battle: 'Your buttons say exactly what you will do. Tap SWING or PUNCH to attack. Hurt mobs may beg: sparing or finishing them changes how people treat you.',
-  safe: 'A safe room! Mobs cannot come in and your game saves here. Open your Bag: tap Open all for your boxes, then Learn the scroll. Tap Gear to wear what you find. The striped cart is Penny\'s shop, and the bench is for crafting.',
+  safe: 'A safe room! Mobs cannot come in and your game saves here. Open your Bag: tap Open all for your boxes, then Learn the scroll. Tap Gear to wear what you find. The striped cart is Penny\'s shop, the bench is for crafting, and the bed heals you for free.',
   stairs: 'Real floors are huge and have two bosses. Beat both to unlock the stairs. This exit is free. Walk onto it when you are ready!',
 };
 function tut(step) {
@@ -1597,6 +1597,7 @@ function indexObjects() {
   for (const b of FL.booths) objIndex.set(key(b), 'booth');
   for (const b of FL.benches) objIndex.set(key(b), 'bench');
   for (const b of FL.shops || []) objIndex.set(key(b), 'shop');
+  for (const b of FL.beds || []) objIndex.set(key(b), 'bed');
   for (const b of FL.bosses) if (!G.bossesDead.includes(b.id)) objIndex.set(key(b), b);
   for (const c of FL.chests) if (!G.opened.includes(c.id)) objIndex.set(key(c), c);
   for (const g of FL.gates || []) if (!G.killed.includes(g.keeper)) objIndex.set(key(g), g);
@@ -1722,11 +1723,21 @@ function interactAdjacent() {
   bookie(R.pick(['Nothing here but dust and despair.', 'You poke the air. Riveting.', 'Try walking into things. That is how this show works.']));
 }
 
+// Safe room bed: a free full restore of HP and MP.
+function sleepInBed() {
+  const s = stats();
+  if (G.hp >= s.maxHp && G.mp >= s.maxMp) return say('You lie down for a second. You are not tired. HP and MP are already full.');
+  G.hp = s.maxHp; G.mp = s.maxMp;
+  say('<span class="good">You nap in the safe room bed. HP and MP fully restored!</span>');
+  bookie(R.pick(['A nap on live TV. The Patrons are paying to watch you snore.', 'Rise and shine, crawler. The mobs did not nap.']));
+  updateHud(); save();
+}
 function interact(obj) {
   if (obj === 'doc') return talkDoc();
   if (obj === 'booth') return boothMenu(lastObjAt, true);
   if (obj === 'bench') return openBench();
   if (obj === 'shop') return openShop();
+  if (obj === 'bed') return sleepInBed();
   if (obj.type && BOSSES[obj.type]) {
     const d = BOSSES[obj.type];
     return ask(`${d.name} blocks your way. ${d.intro}`, [
@@ -2927,6 +2938,14 @@ function drawMap() {
   }
   for (const b of FL.booths) if (onScreen(b) && seen(b.x, b.y)) draw(sprite('bookie'), b.x * 16, b.y * 16, bob);
   for (const b of FL.shops || []) if (onScreen(b) && seen(b.x, b.y)) draw(sprite('shop'), b.x * 16, b.y * 16, 0);
+  for (const b of FL.beds || []) if (onScreen(b) && seen(b.x, b.y)) {
+    const bx = b.x * 16 - camX, by = b.y * 16 - camY;
+    ctx.fillStyle = '#1a1426'; ctx.fillRect(bx + 1, by + 2, 14, 13);
+    ctx.fillStyle = '#5b3a29'; ctx.fillRect(bx + 2, by + 3, 12, 11);
+    ctx.fillStyle = '#fff6e0'; ctx.fillRect(bx + 3, by + 4, 10, 3);
+    ctx.fillStyle = '#3a6ea5'; ctx.fillRect(bx + 3, by + 8, 10, 5);
+    ctx.fillStyle = '#6aa0d8'; ctx.fillRect(bx + 3, by + 8, 10, 1);
+  }
   if (onScreen(FL.doc) && seen(FL.doc.x, FL.doc.y)) draw(docSprite(), FL.doc.x * 16, FL.doc.y * 16);
   for (const g of FL.gates || []) if (onScreen(g) && seen(g.x, g.y) && !G.killed.includes(g.keeper)) {
     const gx = g.x * 16 - camX, gy = g.y * 16 - camY;
