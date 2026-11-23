@@ -1373,6 +1373,12 @@ function fitView() {
   $('app').classList.toggle('fullview', full);
   if (!full && stickId !== null) stickEnd();
   let want = 160;
+  // iPhone Safari does not always re-apply the CSS aspect ratio when leaving the full-screen map,
+  // so the classic view gets an explicit height here: exactly 3:2, never stretched.
+  if (!full) {
+    const bw = stageEl.offsetWidth - stageEl.clientWidth;
+    stageEl.style.height = Math.round(((stageEl.clientWidth || 240) * 160) / 240 + bw) + 'px';
+  } else stageEl.style.height = '';
   if (full) {
     const w = stageEl.clientWidth || 240, h = stageEl.clientHeight || 160;
     want = clamp(Math.round((240 * h) / w), 160, 520);
