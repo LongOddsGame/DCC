@@ -5,7 +5,7 @@ import { generateFloor, tutorialFloor, roomAt, makeGroup, walkable, tileAt, stag
 import { sprite, heroSprite, flipped, docSprite, boxSprite, mobSprite, itemIcon, slotIcon } from './sprites.js?v=__BUILD_VERSION__';
 import { SLOT_COUNT, readSlot, writeSlot, deleteSlot, listSlots } from './save.js?v=__BUILD_VERSION__';
 import { VERSION, checkForUpdate, installUpdate } from './version.js?v=__BUILD_VERSION__';
-import { SUGGEST_KEY } from './config.js?v=__BUILD_VERSION__';
+import { SUGGEST_KEY, COUNTER_CODE } from './config.js?v=__BUILD_VERSION__';
 import { trackPlay, flushStats, statsOn, setStatsOn, playerName, setPlayerName } from './stats.js?v=__BUILD_VERSION__';
 
 const $ = (id) => document.getElementById(id);
@@ -352,7 +352,7 @@ function showTitle() {
       <span class="muted" style="font-size:14px; min-height:18px">${esc(titleState.updateMsg)}</span>
       ${sugBtn}
       <button class="btn grey" data-act="settings">SETTINGS</button>
-      <span class="muted" style="font-size:13px; text-align:center">${statsOn() ? 'Play stats (hero names, progress and play time) are sent to the developer. You can turn this off in Settings.' : 'Play stats are off.'}</span>
+      <span class="muted" style="font-size:13px; text-align:center">${statsOn() ? 'Play stats (hero names, progress and play time) and an anonymous visit count are sent to the developer. You can turn this off in Settings.' : 'Play stats are off.'}</span>
       <span class="version">Build ${esc(VERSION)}</span>
     </div>`);
 }
@@ -367,10 +367,11 @@ overlay.addEventListener('click', (e) => {
 });
 
 const overlayHandlers = {
-  new: (i) => { titleState.confirm = -1; startCreate(i); },
+  new: (i) => { titleState.confirm = -1; countEvent('new-hero'); startCreate(i); },
   load: (i) => {
     titleState.confirm = -1;
     if (!loadSlot(i)) return showTitle();
+    countEvent('continue');
     if (G.cleared) return showFloorClear();
     enterMap(false);
   },
@@ -3020,6 +3021,23 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
+// ---------- Visit counter (GoatCounter) ----------
+// Free and cookie-free: counts page visits plus anonymous "new-hero" and "continue" events,
+// so the owner can see how many people play. Follows the same Settings switch as play stats.
+function loadCounter() {
+  if (!COUNTER_CODE || !statsOn() || window.goatcounter || location.hostname === 'localhost') return;
+  window.goatcounter = { allow_local: false };
+  const s = document.createElement('script');
+  s.async = true;
+  s.dataset.goatcounter = `https://${COUNTER_CODE}.goatcounter.com/count`;
+  s.src = 'https://gc.zgo.at/count.js';
+  document.head.appendChild(s);
+}
+function countEvent(name) {
+  try { if (statsOn() && window.goatcounter && window.goatcounter.count) window.goatcounter.count({ path: name, title: name, event: true }); } catch { /* counter blocked */ }
+}
+loadCounter();
+
 showTitle();
 requestAnimationFrame(loop);
 
@@ -3138,6 +3156,7 @@ function renderSettings() {
     <label>Send play stats to the developer</label>
     <div class="tabs"><button class="tab ${on ? 'on' : ''}" data-act="statsset" data-id="on">On</button><button class="tab ${on ? '' : 'on'}" data-act="statsset" data-id="off">Off</button></div>
     <p class="muted" style="font-size:15px">When on, the game sends the developer at most one short report a day: your hero names, race, class, level, floor, play time, your name below if you give one, and a random player number (not linked to you). It helps make the game better. Nothing else is sent.</p>
+    <p class="muted" style="font-size:15px">It also adds one to an anonymous visit counter (GoatCounter: no cookies, no names) so the developer can see how many people play.</p>
     <label for="setname">Your name (optional)</label>
     <input id="setname" type="text" maxlength="30" autocomplete="off" value="${esc(playerName())}" placeholder="Leave blank to stay anonymous">
     <button class="btn green" data-act="setback">${setFrom === 'menu' ? 'BACK TO GAME' : 'BACK TO TITLE'}</button>`);
@@ -3146,7 +3165,7 @@ function renderSettings() {
 }
 Object.assign(overlayHandlers, {
   settings: () => openSettings(mode === 'map' ? 'menu' : 'title'),
-  statsset: (_, b) => { setStatsOn(b.dataset.id === 'on'); renderSettings(); },
+  statsset: (_, b) => { setStatsOn(b.dataset.id === 'on'); if (statsOn()) loadCounter(); renderSettings(); },
   setback: () => { if (setFrom === 'menu') openMenu(true); else showTitle(); },
 });
 flushStats();
