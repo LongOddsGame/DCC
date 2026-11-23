@@ -1272,6 +1272,12 @@ controls.addEventListener('pointerover', (e) => {
   d.classList.add('held');
   moveHeld = d.dataset.dir;
 });
+// iPhone Safari: holding a button must never start a text selection, magnifier or Copy menu.
+const inField = (t) => t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
+controls.addEventListener('touchstart', (e) => { if (e.target.closest('[data-dir]')) e.preventDefault(); }, { passive: false });
+document.addEventListener('contextmenu', (e) => { if (!inField(e.target)) e.preventDefault(); });
+document.addEventListener('selectstart', (e) => { if (!inField(e.target)) e.preventDefault(); });
+document.addEventListener('gesturestart', (e) => e.preventDefault());
 const release = () => { moveHeld = null; controls.querySelectorAll('.held').forEach((x) => x.classList.remove('held')); };
 window.addEventListener('pointerup', release);
 window.addEventListener('pointercancel', release);

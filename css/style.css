@@ -5,6 +5,11 @@
   --pixel: 'Press Start 2P', monospace; --body: 'Tiny5', system-ui, sans-serif;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* It's a game: no text selection, copy menus or long-press popups anywhere except text boxes. */
+html, body, #app, #app * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+#app { touch-action: manipulation; }
+#app input, #app textarea, input, textarea { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+.dpad, .dpad * { touch-action: none; }
 html, body { margin: 0; height: 100%; background: var(--night); color: var(--paper); font-family: var(--body); overscroll-behavior: none; }
 body { display: flex; justify-content: center; }
 button { font-family: var(--body); color: var(--paper); cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
