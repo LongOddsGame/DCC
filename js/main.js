@@ -65,8 +65,9 @@ function stats() {
   const l = G.lvl - 1;
   s.maxHp += l * 6; s.maxMp += l * 3; s.atk += l; s.def += Math.floor(l / 2); s.mag += l;
   for (const slot of GEAR_SLOTS) {
-    const it = G.equip[slot] && ITEMS[G.equip[slot]];
-    if (it) for (const k in STAT_NAMES) s[k] += it[k] || 0;
+    // gearStats includes upgrade table bonuses (+1 to +5).
+    const gs = gearStats(G.equip[slot]);
+    for (const k in gs) s[k] += gs[k];
   }
   s.maxHp = Math.max(10, s.maxHp);
   return s;
@@ -95,8 +96,16 @@ function addItem(id, n = 1, quiet = false) {
   G.order.push(id);
   if (!quiet) say(`Got <span class="loot">${esc(ITEMS[id].name)}${n > 1 ? ' x' + n : ''}</span>`);
 }
-function removeItem(id, n = 1) {
+// Items that came out of a box bought in Penny's shop are "shop-bound": they can be used, crafted with,
+// upgraded or broken down, but never sold. This stops the buy box, open, sell, repeat money loop.
+// G.bound[id] counts how many of your copies are bound. Using items spends bound copies first.
+function boundCount(id) { return Math.min(count(id), (G.bound && G.bound[id]) || 0); }
+function addBound(id, n) { G.bound = G.bound || {}; G.bound[id] = boundCount(id) + n; }
+function sellableCount(id) { return ITEMS[id].nosell ? 0 : Math.max(0, Math.min(junkCount(id), count(id) - boundCount(id))); }
+function removeItem(id, n = 1, sale = false) {
+  if (!sale && G.bound && G.bound[id]) G.bound[id] = Math.max(0, G.bound[id] - n);
   G.inv[id] = (G.inv[id] || 0) - n;
+  if (G.bound && G.bound[id] > Math.max(0, G.inv[id])) G.bound[id] = Math.max(0, G.inv[id]);
   if (G.inv[id] <= 0) { delete G.inv[id]; G.order = G.order.filter((x) => x !== id); }
   // You cannot wear more copies than you own.
   for (const sl of GEAR_SLOTS.slice().reverse()) if (G.equip[sl] === id && equippedCount(id) > count(id)) G.equip[sl] = null;
@@ -526,7 +535,7 @@ function adviceLines() {
   if (ups) tips.push(`You have better gear sitting in your bag. Tap Gear, then Equip best.`);
   const craftable = RECIPES.filter(canCraft).length;
   if (craftable) tips.push(`The bench here can make ${craftable} thing${craftable > 1 ? 's' : ''} from your materials right now.`);
-  const junk = junkList().reduce((a, id) => a + junkCount(id) * sellPrice(id), 0);
+  const junk = junkList().reduce((a, id) => a + sellableCount(id) * sellPrice(id), 0);
   if (junk >= 10) tips.push(`You have gear that is worse than what you wear. Penny will pay ${junk} tokens for it.`);
   if (!FL.tutorial) {
     const left = FL.bosses.filter((b) => !G.bossesDead.includes(b.id)).length;
@@ -754,11 +763,16 @@ function upgCost(id) {
   if (n >= 3) need.j_jelly = n - 2;
   return { need, tokens: Math.round(((RARITY_PRICE[ITEMS[id].rarity] || 6) / 3) * n) };
 }
+// Scrap (from breaking gear down) covers any missing upgrade material, one for one.
+function scrapNeeded(c) { return Object.entries(c.need).reduce((a, [m, n]) => a + Math.max(0, n - count(m)), 0); }
 function canUpgrade(id) {
   if (upgLevel(id) >= UPG_MAX) return false;
   const c = upgCost(id);
-  return G.tokens >= c.tokens && Object.entries(c.need).every(([m, n]) => count(m) >= n);
+  return G.tokens >= c.tokens && scrapNeeded(c) <= count('j_scrap');
 }
+// Breaking down gear gives Scrap by rarity. Equipped copies are never broken down.
+const SCRAP_YIELD = { common: 1, rusty: 2, silver: 3, gold: 5, patron: 8 };
+function scrapFor(id) { return (SCRAP_YIELD[ITEMS[id].rarity] || 1) + upgLevel(id); }
 function itemName(id) { const l = isGear(id) ? upgLevel(id) : 0; return ITEMS[id].name + (l ? ' +' + l : ''); }
 function statText(id) {
   const parts = Object.entries(gearStats(id)).map(([k, v]) => (v > 0 ? '+' : '') + v + ' ' + STAT_NAMES[k]);
@@ -1008,17 +1022,19 @@ function renderShop(extra = '', keepScroll = true) {
       <h3 class="sub">SUPPLIES</h3><div class="items">${st.basics.map((id) => shopRow(id, false, bought)).join('')}</div>
       ${rest.length ? `<h3 class="sub">OTHER SPECIALS: ONE OF EACH</h3><div class="items">${rest.map((id) => shopRow(id, true, bought)).join('')}</div>` : ''}`;
   } else {
-    const ids = G.order.filter((id) => spareCopies(id) > 0).sort((a, b) => isJunk(b) - isJunk(a));
-    const junk = junkList();
-    const jv = junk.reduce((a, id) => a + junkCount(id) * sellPrice(id), 0);
-    body = `${junk.length ? `<button class="btn gold" data-act="selljunk">SELL ALL JUNK: ${junk.reduce((a, id) => a + junkCount(id), 0)} ITEMS FOR ${jv} TOKENS</button>` : ''}
+    const ids = G.order.filter((id) => sellableCount(id) > 0).sort((a, b) => isJunk(b) - isJunk(a));
+    const junk = junkList().filter((id) => sellableCount(id) > 0);
+    const jv = junk.reduce((a, id) => a + sellableCount(id) * sellPrice(id), 0);
+    const boundIds = G.order.filter((id) => boundCount(id) > 0 && !ITEMS[id].nosell);
+    body = `${junk.length ? `<button class="btn gold" data-act="selljunk">SELL ALL JUNK: ${junk.reduce((a, id) => a + sellableCount(id), 0)} ITEMS FOR ${jv} TOKENS</button>` : ''}
+      ${boundIds.length ? `<p class="muted" style="font-size:14px"><b style="color:var(--pink)">Penny won't buy back what came out of her own boxes.</b> You have ${boundIds.reduce((a, id) => a + boundCount(id), 0)} shop-box items. Use them, craft with them, or break gear down into Scrap at the bench.</p>` : ''}
       <p class="muted" style="font-size:14px">Junk is any gear weaker than what you wear in that slot, spare copies of gear you already wear, and scrolls for moves you know. Crafting materials are never sold as junk.</p>
       <p class="muted" style="font-size:14px">Gear you are wearing is not listed. Junk is also used for crafting at the bench.</p>
       <div class="items">${ids.map((id) => {
         const it = ITEMS[id];
         return `<div class="item"><img src="${icon(id)}" alt="">
-          <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(it.name)} x${count(id)}${junk.includes(id) ? ' <span class="junk-tag">JUNK</span>' : ''}</span><span class="ds">${isGear(id) ? esc(SLOT_NAMES[it.type] + ': ' + statText(id)) : esc(it.desc)}</span></div>
-          <div class="craft-btns"><button class="act" data-act="sell" data-id="${id}" data-n="1">Sell 1 · ${sellPrice(id)}</button>${spareCopies(id) > 1 ? `<button class="act" data-act="sell" data-id="${id}" data-n="all">All ${spareCopies(id)} · ${sellPrice(id) * spareCopies(id)}</button>` : ''}</div></div>`;
+          <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(it.name)} x${count(id)}${junk.includes(id) ? ' <span class="junk-tag">JUNK</span>' : ''}</span><span class="ds">${isGear(id) ? esc(SLOT_NAMES[it.type] + ': ' + statText(id)) : esc(it.desc)}${boundCount(id) ? ` <b style="color:var(--pink)">${boundCount(id)} from shop boxes can't be sold.</b>` : ''}</span></div>
+          <div class="craft-btns"><button class="act" data-act="sell" data-id="${id}" data-n="1">Sell 1 · ${sellPrice(id)}</button>${sellableCount(id) > 1 ? `<button class="act" data-act="sell" data-id="${id}" data-n="all">All ${sellableCount(id)} · ${sellPrice(id) * sellableCount(id)}</button>` : ''}</div></div>`;
       }).join('') || '<p class="muted">Nothing to sell.</p>'}</div>`;
   }
   showOverlay(`
@@ -1043,24 +1059,25 @@ Object.assign(overlayHandlers, {
     if (n < 1) return;
     G.tokens -= p * n;
     addItem(id, n, true);
+    if (ITEMS[id].type === 'box') addBound(id, n);
     if (special) (G.shopBought[stockKey()] = G.shopBought[stockKey()] || []).push(id);
     updateHud();
     renderShop(equipNowHtml(id, 'shop') || `<p class="note good">Bought ${esc(ITEMS[id].name)}${n > 1 ? ' x' + n : ''} for ${p * n} tokens.</p>`);
   },
   sell: (_, b) => {
     const id = b.dataset.id;
-    const spare = spareCopies(id);
+    const spare = sellableCount(id);
     if (spare <= 0) return;
     const n = b.dataset.n === 'all' ? spare : 1;
     const price = sellPrice(id);
     G.tokens += price * n;
-    removeItem(id, n);
+    removeItem(id, n, true);
     updateHud();
     renderShop(`<p class="note good">Sold ${esc(ITEMS[id].name)}${n > 1 ? ' x' + n : ''} for ${price * n} tokens.</p>`);
   },
   selljunk: () => {
     let v = 0;
-    for (const id of junkList()) { const n = junkCount(id); v += n * sellPrice(id); removeItem(id, n); }
+    for (const id of junkList()) { const n = sellableCount(id); if (n > 0) { v += n * sellPrice(id); removeItem(id, n, true); } }
     G.tokens += v;
     updateHud();
     renderShop(`<p class="note good">Sold all junk for ${v} tokens.</p>`);
@@ -1101,7 +1118,7 @@ function craftTimes(r, times) {
 let benchTab = 'craft';
 function openBench() { moveHeld = null; renderBench(); }
 function benchTabs() {
-  return `<div class="tabs"><button class="tab ${benchTab === 'craft' ? 'on' : ''}" data-act="benchtab" data-id="craft">Crafting</button><button class="tab ${benchTab === 'upgrade' ? 'on' : ''}" data-act="benchtab" data-id="upgrade">Upgrade table</button></div>`;
+  return `<div class="tabs"><button class="tab ${benchTab === 'craft' ? 'on' : ''}" data-act="benchtab" data-id="craft">Crafting</button><button class="tab ${benchTab === 'upgrade' ? 'on' : ''}" data-act="benchtab" data-id="upgrade">Upgrade</button><button class="tab ${benchTab === 'salvage' ? 'on' : ''}" data-act="benchtab" data-id="salvage">Break down</button></div>`;
 }
 function renderUpgrade(extra = '') {
   const ids = G.order.filter((id) => isGear(id) && count(id) > 0).sort((a, b) => (isEquipped(b) - isEquipped(a)) || gearScore(b) - gearScore(a));
@@ -1115,6 +1132,8 @@ function renderUpgrade(extra = '') {
       const c = upgCost(id);
       const gains = Object.keys(STAT_NAMES).filter((k) => (it[k] || 0) > 0).map((k) => `<span class="delta up">▲+${upgBonus(id, k, lvl + 1) - upgBonus(id, k, lvl)} ${STAT_NAMES[k]}</span>`).join(' ');
       const need = Object.entries(c.need).map(([m, n]) => `<span class="${count(m) >= n ? 'ok' : 'no'}">${esc(ITEMS[m].name)} ${Math.min(count(m), n)}/${n}</span>`);
+      const sn = scrapNeeded(c);
+      if (sn) need.push(`<span class="${count('j_scrap') >= sn ? 'ok' : 'no'}">or Scrap ${Math.min(count('j_scrap'), sn)}/${sn}</span>`);
       need.push(`<span class="${G.tokens >= c.tokens ? 'ok' : 'no'}">${c.tokens} tokens</span>`);
       body = `<span class="ds">Next: ${gains}</span><span class="need">Needs: ${need.join(', ')}</span>`;
     }
@@ -1131,8 +1150,31 @@ function renderUpgrade(extra = '') {
     <div class="items">${rows}</div>
     <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
 }
+// Break down: turn spare gear (including shop-box gear you can't sell) into Scrap for upgrades.
+function renderSalvage(extra = '') {
+  const scroll = overlay.hidden ? 0 : overlay.scrollTop;
+  const ids = G.order.filter((id) => isGear(id) && spareCopies(id) > 0).sort((a, b) => (boundCount(b) > 0) - (boundCount(a) > 0) || isJunk(b) - isJunk(a) || gearScore(a) - gearScore(b));
+  const rows = ids.map((id) => {
+    const it = ITEMS[id], n = spareCopies(id), y = scrapFor(id);
+    return `<div class="item"><img src="${icon(id)}" alt="">
+      <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))} x${n}${isJunk(id) ? ' <span class="junk-tag">JUNK</span>' : ''}</span>
+      <span class="ds">${esc(SLOT_NAMES[it.type])}: ${esc(statText(id))}${boundCount(id) ? ` <b style="color:var(--pink)">${Math.min(n, boundCount(id))} from shop boxes</b>` : ''}</span>
+      <span class="need">Gives <span class="ok">${y} Scrap</span> each</span></div>
+      <div class="craft-btns"><button class="act purple" data-act="salvage" data-id="${id}" data-n="1">Break 1</button>
+      ${n > 1 ? `<button class="act purple" data-act="salvage" data-id="${id}" data-n="all">All ${n} · ${y * n}</button>` : ''}</div></div>`;
+  }).join('') || '<p class="muted">No spare gear to break down. Gear you are wearing is never listed.</p>';
+  showOverlay(`
+    <div class="row-between"><h2>WORKBENCH</h2><span class="tok">${count('j_scrap')} Scrap</span></div>
+    ${benchTabs()}
+    <p class="muted" style="font-size:15px">Break spare gear down into <b style="color:var(--gold)">Scrap</b>. On the Upgrade tab, Scrap fills in for any material you are missing. Rarer gear gives more: common 1, rusty 2, silver 3, gold 5, patron 8, plus 1 per upgrade level.</p>
+    <div class="items">${rows}</div>
+    ${extra ? `<div class="shop-toast">${extra}</div>` : ''}
+    <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
+  overlay.scrollTop = scroll;
+}
 function renderBench(extra = '') {
   if (benchTab === 'upgrade') return renderUpgrade(extra);
+  if (benchTab === 'salvage') return renderSalvage(extra);
   const order = RECIPES.slice().sort((a, b) => (canCraft(b) - canCraft(a)) || ((G.lvl >= b.lvl) - (G.lvl >= a.lvl)) || a.lvl - b.lvl);
   const rows = order.map((r) => {
     const it = ITEMS[r.out];
@@ -1164,12 +1206,25 @@ Object.assign(overlayHandlers, {
     updateHud();
     renderBench(`<div class="reveal">${equipNowHtml(r.out, 'bench') || `<p class="note good">You made ${esc(ITEMS[r.out].name)}!</p>`}</div>`);
   },
-  benchtab: (_, b) => { benchTab = b.dataset.id; renderBench(); },
+  benchtab: (_, b) => { benchTab = b.dataset.id; hideOverlay(); renderBench(); },
+  salvage: (_, b) => {
+    const id = b.dataset.id;
+    const spare = spareCopies(id);
+    if (!isGear(id) || spare <= 0) return;
+    const n = b.dataset.n === 'all' ? spare : 1;
+    const y = scrapFor(id) * n;
+    removeItem(id, n);
+    addItem('j_scrap', y, true);
+    say(`Broke down ${esc(ITEMS[id].name)}${n > 1 ? ' x' + n : ''} into <span class="loot">${y} Scrap</span>.`);
+    renderSalvage(`<p class="note good">+${y} Scrap (you have ${count('j_scrap')}).</p>`);
+  },
   upgrade: (_, b) => {
     const id = b.dataset.id;
     if (!canUpgrade(id)) return;
     const c = upgCost(id);
-    for (const [m, n] of Object.entries(c.need)) removeItem(m, n);
+    const scrap = scrapNeeded(c);
+    for (const [m, n] of Object.entries(c.need)) { const have = Math.min(count(m), n); if (have) removeItem(m, have); }
+    if (scrap) removeItem('j_scrap', scrap);
     G.tokens -= c.tokens;
     const before = stats();
     G.upg = G.upg || {};
@@ -1772,8 +1827,9 @@ function renderBag(extra = '') {
     const [act, ok, note] = itemAction(id);
     const eq = isEquipped(id);
     const side = it.type === 'potion' && G.sideFx[id] !== undefined ? ' Side effect: ' + SIDE_EFFECTS[G.sideFx[id]].text : '';
+    const bnd = boundCount(id) && !it.nosell ? ` ${boundCount(id)} from shop boxes: can't be sold.` : '';
     return `<div class="item"><img src="${icon(id)}" alt="">
-      <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))} x${count(id)} ${eq ? '<span class="equipped">EQUIPPED</span>' : ''}${badgeHtml(id)}</span><span class="ds">${isGear(id) ? gearDescHtml(id) : esc(it.desc + side)}${note ? ` <b style="color:var(--pink)" ${note.startsWith('Ready in') ? `data-potion-timer="${id}"` : ''}>${esc(note)}</b>` : ''}</span></div>
+      <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))} x${count(id)} ${eq ? '<span class="equipped">EQUIPPED</span>' : ''}${badgeHtml(id)}</span><span class="ds">${isGear(id) ? gearDescHtml(id) : esc(it.desc + side + bnd)}${note ? ` <b style="color:var(--pink)" ${note.startsWith('Ready in') ? `data-potion-timer="${id}"` : ''}>${esc(note)}</b>` : ''}</span></div>
       <button class="star ${G.favs[id] ? 'on' : ''}" data-act="fav" data-id="${id}" aria-label="Favorite">★</button>
       ${act ? `<button class="act" data-act="use" data-id="${id}" ${ok ? '' : 'disabled'} ${note && note.startsWith('Ready in') ? 'data-potion-btn' : ''}>${act}</button>` : ''}</div>`;
   }).join('') || '<p class="muted">Nothing here yet.</p>';
@@ -1901,10 +1957,13 @@ function setBuff(stat, n) {
 }
 
 function openOneBox(id) {
+  const bound = boundCount(id) > 0; // bound boxes are opened first
   removeItem(id);
   G.boxesOpened++;
   const loot = rollLoot(id);
-  for (const [iid, n] of loot.items) addItem(iid, n, true);
+  if (bound) loot.tokens = 0; // a bought box never pays back tokens
+  loot.bound = bound;
+  for (const [iid, n] of loot.items) { addItem(iid, n, true); if (bound) addBound(iid, n); }
   G.tokens += loot.tokens;
   if (G.boxesOpened >= 5) achieve('boxaddict');
   return loot;

@@ -211,6 +211,7 @@ export const ITEMS = {
   j_wire: { name: 'Loose Wires', type: 'junk', rarity: 'common', value: 2, desc: 'Crafting material for the bench.' },
   j_jelly: { name: 'Slime Jelly', type: 'junk', rarity: 'common', value: 3, edible: 6, desc: 'Crafting material. Technically edible.' },
   j_tail: { name: 'Rat Tail', type: 'junk', rarity: 'common', value: 2, edible: 4, desc: 'Crafting material. Technically edible.' },
+  j_scrap: { name: 'Scrap', type: 'junk', rarity: 'common', value: 0, nosell: true, desc: 'From breaking down gear at the bench. Stands in for any missing material when you upgrade gear.' },
   j_feather: { name: 'Pigeon Feather', type: 'junk', rarity: 'common', value: 1, desc: 'Crafting material for the bench.' },
   scroll_venom: { name: 'Scroll of Venom Dart', type: 'scroll', rarity: 'rusty', teaches: 'venom', desc: 'Teaches Venom Dart. Learn it in a safe room.' },
   scroll_iron: { name: 'Scroll of Iron Skin', type: 'scroll', rarity: 'rusty', teaches: 'iron', desc: 'Teaches Iron Skin. Learn it in a safe room.' },
