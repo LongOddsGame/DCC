@@ -166,7 +166,8 @@ label { font-size: 15px; color: var(--muted); }
 .fdmg { flex: none; min-width: 52px; text-align: center; font-family: var(--pixel); font-size: 16px; color: var(--paper); display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .fdmg small { font-size: 7px; color: #ffd6e0; }
 .fdmg.util { font-size: 9px; color: #b8e05a; line-height: 1.4; }
-.opt-head { font-family: var(--pixel); font-size: 9px; color: var(--cyan); padding: 4px 2px 0; }
+.opt-arrow { font-family: sans-serif; font-size: 12px; margin-right: 4px; }
+.opt-head { font-family: var(--pixel); font-size: 9px; color: var(--cyan); padding: 8px 4px; display: flex; justify-content: space-between; align-items: center; width: 100%; background: rgba(79,216,232,0.08); border: 1px solid rgba(79,216,232,0.35); border-radius: 4px; cursor: pointer; text-align: left; }
 
 /* Gear, shop and bench */
 .small-row { gap: 6px; }
