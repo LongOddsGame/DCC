@@ -93,6 +93,15 @@ function heroText(h) {
   ].join('\n');
 }
 
+// Errors the crash catcher in index.html saved on this device (the last 5), so the owner sees crashes.
+const K_ERR = 'longodds.errors';
+function recentErrors() {
+  try {
+    const list = JSON.parse(get(K_ERR) || '[]');
+    return list.length ? list.map((x) => `${x.t} · build ${x.b} · ${x.e}`).join('\n') : 'none';
+  } catch { return 'none'; }
+}
+
 let sending = false;
 // Sends the waiting report if one is due. keepalive lets it finish if the game is closing.
 export async function flushStats() {
@@ -116,6 +125,7 @@ export async function flushStats() {
     heroes: lines.join('\n\n'),
     device: device(),
     build: VERSION,
+    errors: recentErrors(),
     botcheck: '',
   });
   sending = true;
@@ -125,6 +135,7 @@ export async function flushStats() {
     const j = await r.json().catch(() => ({}));
     if (r.ok && j.success !== false) {
       set(K_LAST, sentDay);
+      del(K_ERR);
       // Keep any play that happened while this was sending.
       const now = pending();
       now.secs = Math.max(0, now.secs - p.secs);

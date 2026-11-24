@@ -3360,7 +3360,7 @@ async function enemyAct(e) {
 }
 
 function checkEnd() {
-  if (G.hp <= 0) { G.hp = 0; updateHud(); setTimeout(() => die('You were knocked out on live TV.'), 700); B.phase = 'busy'; renderBattleControls(); return true; }
+  if (G.hp <= 0) { G.hp = 0; updateHud(); const fight = B; if (!fight.down) { fight.down = true; setTimeout(() => { if (B === fight) die('You were knocked out on live TV.'); }, 700); } B.phase = 'busy'; renderBattleControls(); return true; }
   if (alive().length) return false;
   victory();
   return true;
@@ -3475,6 +3475,8 @@ function endBattleReturn() {
 function die(reason) {
   mode = 'title'; lowHpPulse();
   B = null; prompt = null;
+  textbox.classList.remove('picking');
+  spotted = null; moveHeld = null; walk = null; keysDown = [];
   controls.innerHTML = '';
   showOverlay(`
     <p class="banner red" style="margin-top:40px">YOU DIED</p>
@@ -3485,7 +3487,10 @@ function die(reason) {
 }
 overlayHandlers.reload = () => {
   const slot = G.slot;
-  if (!loadSlot(slot)) return showTitle();
+  let ok = false;
+  try { ok = loadSlot(slot); } catch (err) { if (window.__loErr) window.__loErr(err); }
+  if (!ok) return showTitle();
+  spotGrace = 1.5; calmT = 0;
   G.deaths++;
   shiftOdds(1.1);
   enterMap(false);
@@ -4041,7 +4046,16 @@ let lastT = performance.now();
 let calmT = 0, regenAcc = 0; // seconds since the last fight, and partial HP healed
 let hudTick = 0;
 let statsAcc = 0;
+// One bad frame must never freeze the whole game: the next frame is always queued first,
+// and an error shows the crash note (index.html) instead of a silent frozen screen.
+let loopErrs = 0;
 function loop(now) {
+  requestAnimationFrame(loop);
+  try { frameStep(now); } catch (err) {
+    if (loopErrs++ < 3 && window.__loErr) window.__loErr(err);
+  }
+}
+function frameStep(now) {
   const dt = Math.min(0.1, (now - lastT) / 1000);
   lastT = now;
   frame++;
@@ -4087,7 +4101,6 @@ function loop(now) {
   } else if (mode === 'battle' && B) {
     drawBattle();
   } else drawIdle();
-  requestAnimationFrame(loop);
 }
 
 // ---------- Visit counter (GoatCounter) ----------

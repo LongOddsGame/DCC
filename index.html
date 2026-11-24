@@ -45,6 +45,47 @@
   <section id="controls"></section>
   <div id="overlay" hidden></div>
 </div>
+<script>
+// Crash catcher (owner asked after a crash on respawn). Any error shows a small note at the top of
+// the screen that can be screenshotted, and the last 5 errors ride along with the next play stats email.
+(function () {
+  var shown = {};
+  function note(msg, where) {
+    var text = String(msg || 'Unknown error') + (where ? ' (' + where + ')' : '');
+    if (shown[text]) return;
+    shown[text] = 1;
+    try {
+      var list = JSON.parse(localStorage.getItem('longodds.errors') || '[]');
+      list.push({ t: new Date().toISOString(), e: text.slice(0, 300), b: '__BUILD_VERSION__' });
+      localStorage.setItem('longodds.errors', JSON.stringify(list.slice(-5)));
+    } catch (_) { /* storage blocked */ }
+    function show() {
+      var box = document.getElementById('errnote');
+      if (!box) { box = document.createElement('div'); box.id = 'errnote'; document.body.appendChild(box); }
+      box.innerHTML = '<b>Oops, something broke.</b> Screenshot this for Claude, then tap Keep playing.<br><code></code><br>'
+        + '<button type="button" data-k="close">Keep playing</button> <button type="button" data-k="reload">Restart game</button>';
+      box.querySelector('code').textContent = text + ' · Build __BUILD_VERSION__';
+      box.onclick = function (e) {
+        var k = e.target && e.target.getAttribute('data-k');
+        if (k === 'close') box.remove();
+        if (k === 'reload') location.reload();
+      };
+    }
+    if (document.body) show(); else addEventListener('DOMContentLoaded', show);
+  }
+  function where(file, line) { return file ? String(file).split('/').pop().split('?')[0] + ':' + line : ''; }
+  // Where it broke, short: "drawTile main.js:3860 < drawMap main.js:3901".
+  function trace(stack) {
+    return String(stack || '').split('\n').filter(function (l) { return /\.js/.test(l); }).slice(0, 3).map(function (l) {
+      var m = l.match(/(?:at )?([\w$.]*)[ @(]*\S*\/([\w.-]+\.js)[^:]*:(\d+)/);
+      return m ? (m[1] ? m[1] + ' ' : '') + m[2] + ':' + m[3] : l.trim();
+    }).join(' < ');
+  }
+  window.__loErr = function (err) { note(err && err.message || err, err && err.stack ? trace(err.stack) : ''); };
+  addEventListener('error', function (e) { if (e.message) note(e.message, where(e.filename, e.lineno)); });
+  addEventListener('unhandledrejection', function (e) { window.__loErr(e.reason); });
+})();
+</script>
 <script type="module" src="js/main.js?v=__BUILD_VERSION__"></script>
 </body>
 </html>
