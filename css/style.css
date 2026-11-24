@@ -295,3 +295,7 @@ textarea { width: 100%; font-family: var(--body); font-size: 18px; line-height: 
 .qbar div { height: 100%; background: var(--gold); }
 .quest-row .txt { gap: 1px; }
 .quest-npc img { width: 48px; height: 48px; }
+/* Crash note (see index.html): small, on top of everything, easy to screenshot. */
+#errnote { position: fixed; top: 8px; left: 8px; right: 8px; z-index: 99; background: #2a0f1a; color: #fff6e0; border: 3px solid #ff5fa2; padding: 8px 10px; font-size: 13px; line-height: 1.4; }
+#errnote code { display: block; margin: 6px 0; color: #ffb3c7; font-size: 11px; word-break: break-word; }
+#errnote button { background: #3b2a4d; color: #fff6e0; border: 2px solid #8b84a3; padding: 6px 10px; font: inherit; margin-right: 6px; }
