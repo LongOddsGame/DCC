@@ -201,13 +201,16 @@ export function generateFloor(seed, floor, opts = {}) {
   let mi = 0;
   // Every fight room has at least two groups, and many get a third (owner: too easy, more mobs).
   // Deeper floors and later stages pack rooms tighter.
+  // Except Floor 1 stage 1 (owner: new heroes kept dying at level 1): one group per room, sometimes two,
+  // smaller packs and no elites, so a brand new hero can warm up.
   for (const r of fightRooms) {
-    const groups = 2 + (rng.chance(0.4 + 0.15 * (floor - 1) + depthOf(r) * 0.2) ? 1 : 0);
+    const easy = isEasyStart(floor, r);
+    const groups = easy ? 1 + (rng.chance(0.4) ? 1 : 0) : 2 + (rng.chance(0.4 + 0.15 * (floor - 1) + depthOf(r) * 0.2) ? 1 : 0);
     for (let gi = 0; gi < groups; gi++) {
       const p = freeSpot(r);
       if (!p) continue;
       const depth = depthOf(r);
-      mobs.push({ id: 'm' + mi++, x: p.x, y: p.y, depth, ...makeGroup(rng, types, traitIds, depth, rng.chance(0.03 + depth * 0.07)) });
+      mobs.push({ id: 'm' + mi++, x: p.x, y: p.y, depth, ...makeGroup(rng, types, traitIds, depth, !easy && rng.chance(0.03 + depth * 0.07), easy) });
     }
   }
 
@@ -224,13 +227,17 @@ export function stageAt(fl, x) {
   return Math.max(0, Math.min(fl.stages.length - 1, Math.floor((x - 1) / (SW + 2))));
 }
 
-export function makeGroup(rng, types, traitIds, depth, elite) {
+// Floor 1, stage 1: the gentle warm-up area.
+export function isEasyStart(floor, room) { return floor === 1 && !!room && room.stage === 0; }
+
+export function makeGroup(rng, types, traitIds, depth, elite, easy = false) {
   const roll = rng.next();
   // Bigger packs than before (owner: more mobs). Lone mobs get rare near the bosses.
-  const size = roll < 0.3 - depth * 0.15 ? 1 : roll < 0.72 - depth * 0.12 ? 2 : 3;
+  // The easy start area uses packs of 1 (60%) or 2 (40%) only.
+  const size = easy ? (roll < 0.6 ? 1 : 2) : roll < 0.3 - depth * 0.15 ? 1 : roll < 0.72 - depth * 0.12 ? 2 : 3;
   const members = [];
   for (let m = 0; m < size; m++) {
-    const tr = rng.next() - depth * 0.25;
+    const tr = rng.next() - depth * 0.25 + (easy ? 0.2 : 0); // fewer traits in the easy start
     const n = elite && m === 0 ? 3 : tr < 0.5 ? 0 : tr < 0.85 ? 1 : 2;
     members.push({ type: rng.pick(types), traits: rng.shuffle(traitIds).slice(0, n), elite: elite && m === 0 });
   }
