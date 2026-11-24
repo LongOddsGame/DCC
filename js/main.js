@@ -1350,6 +1350,15 @@ function craftTimes(r, times) {
   }
 }
 let benchTab = 'craft';
+// Crafting recipes are grouped by what they make. Food sits with potions since both heal.
+const CRAFT_TYPES = [{ id: 'potion', name: 'Potions' }, { id: 'bomb', name: 'Bombs' }, { id: 'gear', name: 'Gear' }];
+function recipeType(r) {
+  const t = ITEMS[r.out].type;
+  if (t === 'bomb') return 'bomb';
+  if (isGear(r.out)) return 'gear';
+  return 'potion';
+}
+let craftType = 'all';
 function openBench() { moveHeld = null; renderBench(); }
 function benchTabs() {
   return `<div class="tabs"><button class="tab ${benchTab === 'craft' ? 'on' : ''}" data-act="benchtab" data-id="craft">Crafting</button><button class="tab ${benchTab === 'upgrade' ? 'on' : ''}" data-act="benchtab" data-id="upgrade">Upgrade</button><button class="tab ${benchTab === 'salvage' ? 'on' : ''}" data-act="benchtab" data-id="salvage">Break down</button></div>`;
@@ -1409,13 +1418,22 @@ function renderSalvage(extra = '') {
 function renderBench(extra = '') {
   if (benchTab === 'upgrade') return renderUpgrade(extra);
   if (benchTab === 'salvage') return renderSalvage(extra);
-  const order = RECIPES.slice().sort((a, b) => (canCraft(b) - canCraft(a)) || ((G.lvl >= b.lvl) - (G.lvl >= a.lvl)) || a.lvl - b.lvl);
-  const rows = order.map((r) => {
+  const sorted = RECIPES.slice().sort((a, b) => (canCraft(b) - canCraft(a)) || ((G.lvl >= b.lvl) - (G.lvl >= a.lvl)) || a.lvl - b.lvl);
+  const inType = (t) => sorted.filter((r) => recipeType(r) === t);
+  const typeTabs = `<div class="tabs grid4">${['all', ...CRAFT_TYPES.map((t) => t.id)].map((t) => {
+    const list = t === 'all' ? sorted : inType(t);
+    const n = list.filter(canCraft).length;
+    const label = t === 'all' ? 'All' : CRAFT_TYPES.find((x) => x.id === t).name;
+    return `<button class="tab ${craftType === t ? 'on' : ''}" data-act="crafttype" data-id="${t}">${label}${n ? ` <span class="ok">${n}</span>` : ''}</button>`;
+  }).join('')}</div>`;
+  // All shows every type under its own heading; a type tab shows just that type.
+  const order = craftType === 'all' ? CRAFT_TYPES.flatMap((t) => inType(t.id).map((r, i) => ({ r, head: i === 0 ? t.name : '' }))) : inType(craftType).map((r) => ({ r, head: '' }));
+  const rows = order.map(({ r, head }) => {
     const it = ITEMS[r.out];
     const locked = G.lvl < r.lvl;
     const need = Object.entries(recipeNeed(r)).map(([id, n]) => `<span class="${count(id) >= n ? 'ok' : 'no'}">${esc(ITEMS[id].name)} ${Math.min(count(id), n)}/${n}</span>`);
     if (r.tokens) need.push(`<span class="${G.tokens >= r.tokens ? 'ok' : 'no'}">${r.tokens} tokens</span>`);
-    return `<div class="item ${locked ? 'locked' : ''}"><img src="${icon(r.out)}" alt="">
+    return `${head ? `<div class="item-group">${head}</div>` : ''}<div class="item ${locked ? 'locked' : ''}"><img src="${icon(r.out)}" alt="">
       <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(it.name)}</span>
       <span class="ds">${isGear(r.out) ? gearDescHtml(r.out) : esc(it.desc)}</span>
       <span class="need">${locked ? `Unlocks at level ${r.lvl}` : 'Needs: ' + need.join(', ')}</span></div>
@@ -1426,9 +1444,10 @@ function renderBench(extra = '') {
   showOverlay(`
     <div class="row-between"><h2>WORKBENCH</h2><span class="muted" style="font-size:14px">${ready} ready to make</span></div>
     ${benchTabs()}
+    ${typeTabs}
     ${extra}
     <p class="muted" style="font-size:15px">Mobs drop crafting materials. Bash them together into gear, potions and bombs. New recipes unlock as you level up.${hasPerk('tinkerer') ? ' Tinkerer: every recipe needs one less material.' : ''}</p>
-    <div class="items">${rows}</div>
+    <div class="items">${rows || '<p class="muted">No recipes of this type yet.</p>'}</div>
     <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
 }
 Object.assign(overlayHandlers, {
@@ -1441,6 +1460,7 @@ Object.assign(overlayHandlers, {
     renderBench(`<div class="reveal">${equipNowHtml(r.out, 'bench') || `<p class="note good">You made ${esc(ITEMS[r.out].name)}!</p>`}</div>`);
   },
   benchtab: (_, b) => { benchTab = b.dataset.id; hideOverlay(); renderBench(); },
+  crafttype: (_, b) => { craftType = b.dataset.id; hideOverlay(); renderBench(); },
   salvage: (_, b) => {
     const id = b.dataset.id;
     const spare = spareCopies(id);
