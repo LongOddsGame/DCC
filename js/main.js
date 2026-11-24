@@ -1,6 +1,6 @@
 // Long Odds prototype. Game state, map, battles, bag, safe room and screens.
 import { R, makeRng, newSeed } from './rng.js?v=__BUILD_VERSION__';
-import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, GEAR_TYPES, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, FLOORS, LAST_FLOOR, MINIONS, floorDef, floorSize, baseId, RECIPES, SCHOOL_NAMES } from './data.js?v=__BUILD_VERSION__';
+import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, GEAR_TYPES, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, FLOORS, LAST_FLOOR, CLASS_SWAP_FLOORS, MINIONS, floorDef, floorSize, baseId, RECIPES, SCHOOL_NAMES } from './data.js?v=__BUILD_VERSION__';
 import { generateFloor, tutorialFloor, roomAt, makeGroup, isEasyStart, walkable, tileAt, stageAt, T, key } from './dungeon.js?v=__BUILD_VERSION__';
 import { sprite, heroSprite, flipped, docSprite, boxSprite, mobSprite, itemIcon, slotIcon } from './sprites.js?v=__BUILD_VERSION__';
 import { SLOT_COUNT, readSlot, writeSlot, deleteSlot, listSlots, exportCode, importCode } from './save.js?v=__BUILD_VERSION__';
@@ -1520,7 +1520,55 @@ function enterMap(fresh) {
   if (G.upgNote) { say(`<b>${esc(G.upgNote)}</b>`); G.upgNote = ''; }
   updateHud();
   renderControls();
+  // A class swap waits until it is picked, even if the game is closed on the swap screen.
+  if (G.classChangeOffer && !FL.tutorial) offerClassChange();
 }
+
+// ---------- Class swap (start of Floor 3) ----------
+// The hero can pick any class, or keep the one they have. Level, gear, spells and bag all stay.
+// The new class move starts over at Lv 1.
+let swapPick = null;
+function offerClassChange() { swapPick = null; showClassSwap(); }
+function showClassSwap() {
+  const cur = cls();
+  const c = byId(CLASSES, swapPick) || cur;
+  const sch = (x) => x.cannot && x.cannot.length ? `No ${x.cannot.map((k) => SCHOOL_NAMES[k]).join(', ')}` : 'Any spell';
+  const list = [cur, ...CLASSES.filter((x) => x.id !== cur.id).sort((x, y) => x.name.localeCompare(y.name))];
+  showOverlay(`
+    <h2>NEW FLOOR, NEW YOU?</h2>
+    <div class="bookie"><img src="${sprite('bookie').toDataURL()}" alt=""><p><b style="color:var(--pink)">BOOKIE:</b> The Patrons voted. You get ONE chance to change your class. Pick any class, or stay a ${esc(cur.name)}.</p></div>
+    <div class="preview"><img src="${heroSprite(race(), c, 'down', 0, G.sex).toDataURL()}" alt=""><div><p><b>${esc(race().name)} ${esc(c.name)}</b>${c.id === cur.id ? ' <span class="muted">(current)</span>' : ''}</p><p class="muted" style="font-size:15px">${esc(c.desc)}</p>
+      <p style="font-size:15px"><b style="color:var(--gold)">${esc(c.skill.name)}</b> (${c.skill.mp} MP): ${esc(c.skill.desc)}</p>
+      <p style="font-size:14px;color:#ff8a8a">${esc(cannotText(c))}</p>
+      <p class="muted" style="font-size:14px">${esc(modsText(c.mods))}</p></div></div>
+    <p class="muted" style="font-size:14px">You keep your level, gear, spells and bag. A new class move starts at Lv 1. Spells you already know stay, even ones the new class can't learn.</p>
+    <div class="cards">${list.map((x) => `<button class="card ${c.id === x.id ? 'sel' : ''}" data-act="swappick" data-id="${x.id}"><span class="nm">${esc(x.name)}${x.id === cur.id ? ' ★' : ''}</span><span class="ds">${esc(x.skill.name)} · ${esc(sch(x))}</span></button>`).join('')}</div>
+    <div class="grid2" style="position:sticky; bottom:0; background:var(--night); padding:8px 0"><button class="btn grey" data-act="swapkeep">KEEP ${esc(cur.name.toUpperCase())}</button>${c.id === cur.id ? '<button class="btn" disabled>TAP A CLASS ABOVE</button>' : `<button class="btn green" data-act="swapgo">BECOME ${esc(c.name.toUpperCase())}</button>`}</div>`);
+}
+function finishClassSwap(id) {
+  const old = cls();
+  if (id && id !== old.id && byId(CLASSES, id)) {
+    G.cls = id;
+    G.moveXp = G.moveXp || {};
+    G.moveXp.class = 0;
+    const s = stats();
+    G.hp = Math.min(G.hp, s.maxHp); G.mp = Math.min(G.mp, s.maxMp);
+    say(`<b>You are now a ${esc(cls().name)}!</b> New move: ${esc(cls().skill.name)}.`);
+    bookie(`From ${old.name} to ${cls().name}. The odds board just lit up.`);
+  } else {
+    say(`You stay a <b>${esc(old.name)}</b>.`);
+  }
+  G.classChangeOffer = false; G.classChanged = true; swapPick = null;
+  hideOverlay();
+  updateHud();
+  renderControls();
+  save();
+}
+Object.assign(overlayHandlers, {
+  swappick: (_, b) => { swapPick = b.dataset.id; showClassSwap(); },
+  swapkeep: () => finishClassSwap(null),
+  swapgo: () => finishClassSwap(swapPick),
+});
 
 function renderControls() {
   if (prompt) {
@@ -2572,6 +2620,16 @@ function moveEstimate(kind) {
     guard: () => ({ util: '+5 DEF' }),
     blind: () => ({ util: 'STUN' }),
     curse: () => ({ dmg: M * 0.8 }),
+    execute: () => ({ dmg: hit(P * 0.9 - d) }),
+    shred: () => ({ dmg: P * 0.9 }),
+    parry: () => ({ util: 'PARRY' }),
+    gamble: () => ({ dmg: hit(P * 1.3 - d) }),
+    audit: () => ({ dmg: M * 0.8 }),
+    chain: () => ({ dmg: M * 0.5 * 3 / Math.max(1, alive().length), all: true }),
+    reckless: () => ({ dmg: hit(P * 1.9 - d) }),
+    bleed: () => ({ dmg: hit(P * 0.7 - d) + 3 * Math.round(P * 0.3) }),
+    barrier: () => ({ util: '+' + Math.round(10 + m * 1.5) + ' SHIELD' }),
+    mark: () => ({ dmg: hit(P * 0.6 - d) }),
     venom: () => ({ dmg: 3 * tick }),
     frost: () => ({ dmg: M * 0.8 }),
     leech: () => ({ dmg: M * 0.9 }),
@@ -2623,7 +2681,7 @@ function fightOptHtml(o) {
 }
 
 function renderBattleControls() {
-  const foes = `<div class="foes">${B.enemies.map((e) => `<div class="foe ${e.alive ? '' : 'dead'}"><span><span class="nm">${esc(e.full)}</span> <span class="muted">${Math.max(0, e.hp)}/${e.maxHp}</span> <span class="xpv">${xpFor(e)} XP</span>${e.traits.length ? `<br><span class="tr">${e.traits.map((t) => esc(TRAITS[t].desc)).join(' · ')}</span>` : ''}${e.poison ? ' <span class="tr" style="color:#b8e05a">Poisoned</span>' : ''}</span><span class="in">${esc(intentText(e))}</span></div>`).join('')}</div>`;
+  const foes = `<div class="foes">${B.enemies.map((e) => `<div class="foe ${e.alive ? '' : 'dead'}"><span><span class="nm">${esc(e.full)}</span> <span class="muted">${Math.max(0, e.hp)}/${e.maxHp}</span> <span class="xpv">${xpFor(e)} XP</span>${e.traits.length ? `<br><span class="tr">${e.traits.map((t) => esc(TRAITS[t].desc)).join(' · ')}</span>` : ''}${e.poison ? ' <span class="tr" style="color:#b8e05a">Poisoned</span>' : ''}${e.bleed ? ' <span class="tr" style="color:#ff8a8a">Bleeding</span>' : ''}${e.marked ? ' <span class="tr" style="color:#f5c542">Wanted</span>' : ''}</span><span class="in">${esc(intentText(e))}</span></div>`).join('')}</div>`;
   let btns = '';
   if (B.phase === 'menu') {
     btns = `<div class="grid2">
@@ -2706,6 +2764,7 @@ function hitEnemy(e, dmg, why = '') {
   // Bosses take 25% less from mana moves, so one big special can't melt them.
   if (e.boss && B && B.casting) dmg *= 0.75;
   if (B && B.casting && B.movePow) dmg *= B.movePow;
+  if (e.marked) dmg *= 1.3;
   dmg = Math.max(1, Math.round(dmg));
   e.hp -= dmg;
   e.flash = 12;
@@ -2904,6 +2963,50 @@ async function castMoveInner(id, e, s, isClass, def) {
         for (const x of alive()) { if (R.chance(0.6)) { x.frozen = 1; say(`${esc(x.full)} can't see!`); } else say(`${esc(x.full)} blinks it off.`); }
         break;
       case 'curse': await bolt('#8a4fc9'); hitEnemy(e, M() * 0.8); if (e.alive) { e.atk = Math.max(1, e.atk - 3); say(`${esc(e.full)} feels weaker. Its hits do 3 less.`); } break;
+      // ----- Move types added with the new classes -----
+      case 'execute': {
+        const low = e.hp <= e.maxHp / 3;
+        await fist('#5a5373');
+        hitEnemy(e, ((a() + 1) * 0.9 - e.def) * (low ? 2 : 1), low ? 'PAST DUE! ' : '');
+        break;
+      }
+      case 'shred': await fist('#f5c542'); hitEnemy(e, (a() + 1) * 0.9); if (e.alive && e.def > 0) { e.def = Math.max(0, e.def - 2); say(`${esc(e.full)}'s armor cracks. -2 defense.`); } break;
+      case 'parry': burst(HERO_C.x, HERO_C.y, 'shield', '#fff6e0'); B.parry = 1; say('You raise your guard. The next hit on you gets parried.'); break;
+      case 'gamble': {
+        const win = R.chance(Math.min(0.65, 0.5 + s.luck * 0.01));
+        burst(eb.cx, eb.cy, 'star', win ? '#f5c542' : '#8b84a3'); await sleep(200);
+        if (win) { addHype(1); hitEnemy(e, (a() + 1) * 2.2 - e.def, 'JACKPOT! '); } else hitEnemy(e, (a() + 1) * 0.4 - e.def, 'Bust. ');
+        break;
+      }
+      case 'audit': { await bolt(def.color || '#6bbf59'); hitEnemy(e, M() * 0.8); const g = Math.min(2, s.maxMp - G.mp); if (g > 0) { G.mp += g; say(`You claw back <b>${g}</b> MP.`); } break; }
+      case 'chain': {
+        for (let i = 0; i < 3 && alive().length; i++) {
+          const x = R.pick(alive()), b = enemyBox(x);
+          await fly(i ? { x: b.cx + 30, y: b.cy - 10 } : HERO_C, { x: b.cx, y: b.cy }, 'bolt', '#ff5fa2', 200);
+          burst(b.cx, b.cy, 'star', '#4fd8e8'); hitEnemy(x, M() * 0.5);
+        }
+        break;
+      }
+      case 'reckless': {
+        const cost = Math.max(1, Math.round(s.maxHp * 0.08));
+        G.hp = Math.max(1, G.hp - cost); flashHp(); popHero('-' + cost, '#ff5fa2');
+        await fist('#f5c542'); hitEnemy(e, (a() + 1) * 1.9 - e.def);
+        say(`The impact costs you <b>${cost}</b> HP.`);
+        break;
+      }
+      case 'bleed': {
+        burst(eb.cx, eb.cy, 'slash', '#c8334a'); await sleep(200); hitEnemy(e, (a() + 1) * 0.7 - e.def);
+        if (e.alive) { e.bleed = 3; e.bleedDmg = Math.max(1, Math.round((heroAtk() + 1) * 0.3 * (B.movePow || 1))); say(`${esc(e.full)} is bleeding!`); }
+        break;
+      }
+      case 'barrier': {
+        const sh = Math.round((10 + s.mag * 1.5) * (B.movePow || 1));
+        B.shield = Math.min((B.shield || 0) + sh, sh * 2); // stacks up to two casts
+        burst(HERO_C.x, HERO_C.y, 'shield', '#e8dcc0'); popHero('+' + sh + ' SHIELD', '#e8dcc0');
+        say(`You wrap up tight. Your shield soaks the next <b>${B.shield}</b> damage.`);
+        break;
+      }
+      case 'mark': await bolt('#f5c542'); hitEnemy(e, (a() + 1) * 0.6 - e.def); if (e.alive && !e.marked) { e.marked = true; say(`${esc(e.full)} is WANTED. Your hits on it do 30% more.`); } break;
     }
     return;
   }
@@ -2936,6 +3039,7 @@ async function enemyTurn() {
   }
   if (B.poison > 0 && G.hp > 0) { const pd = B.poisonDmg || Math.round(2 * fsize()); G.hp -= pd; B.poison--; if (!B.poison) B.poisonDmg = 0; flashHp(); popHero('-' + pd, '#b8e05a'); say(`${B.burn ? 'The grease burns' : B.bleed ? 'You bleed' : 'Poison stings'}. <b>${pd}</b> damage.`); }
   for (const e of alive()) if (e.poison > 0 && G.hp > 0) { e.poison--; hitEnemy(e, 2 + Math.floor(stats().mag / 4), 'Venom! '); }
+  for (const e of alive()) if (e.bleed > 0 && G.hp > 0) { e.bleed--; hitEnemy(e, e.bleedDmg || 2, 'Bleed! '); }
   for (const e of alive()) rollIntent(e);
   updateHud();
   if (checkEnd()) return;
@@ -2960,6 +3064,15 @@ async function enemyTurn() {
   renderBattleControls();
 }
 
+// Bubble Wrap shield (Warehouse Packer) soaks damage before it reaches your HP. Returns what is left.
+function soakShield(dmg) {
+  if (!B || !B.shield) return dmg;
+  const s = Math.min(B.shield, dmg);
+  B.shield -= s;
+  burst(HERO_C.x, HERO_C.y, 'shield', '#e8dcc0');
+  say(`Your shield soaks <b>${s}</b>${B.shield ? ` (${B.shield} left)` : ' and pops'}.`);
+  return dmg - s;
+}
 async function enemyAct(e) {
   if (e.intent === 'defend') { say(`${esc(e.full)} braces itself.`); return; }
   const atk = ATTACKS[e.atkKey] || ATTACKS.rat;
@@ -2985,7 +3098,7 @@ async function enemyAct(e) {
   if (e.intent === 'fare' && e.bossType === 'towtruck') {
     say(`${esc(e.full)} uses <b>Hook and Drag</b>!`);
     await fly({ x: eb.cx, y: eb.cy }, HERO_C, 'bar', '#8b84a3', 420);
-    const d = Math.max(1, Math.round(e.atk * 0.8 * fd().defK / (fd().defK + Math.max(0, heroDef()))));
+    const d = soakShield(Math.max(1, Math.round(e.atk * 0.8 * fd().defK / (fd().defK + Math.max(0, heroDef())))));
     G.hp -= d; flashHp(); popHero('-' + d, '#ff5fa2');
     if (B.noStun > 0) say(`You take <b>${d}</b> damage, but you slip the hook.`);
     else { B.stun = 1; say(`You take <b>${d}</b> damage and get hooked! You lose your next turn.`); }
@@ -2994,7 +3107,7 @@ async function enemyAct(e) {
   if (e.intent === 'fare' && e.bossType === 'metermaid') {
     say(`${esc(e.full)} uses <b>Boot Clamp</b>!`);
     await fly({ x: eb.cx, y: eb.cy }, HERO_C, 'tickets', '#4fd8e8', 380);
-    const d = Math.max(1, Math.round(e.atk * 0.5 * fd().defK / (fd().defK + Math.max(0, heroDef()))));
+    const d = soakShield(Math.max(1, Math.round(e.atk * 0.5 * fd().defK / (fd().defK + Math.max(0, heroDef())))));
     G.hp -= d; flashHp(); popHero('-' + d, '#ff5fa2');
     const cut = Math.round(3 * fsize());
     B.buff.def = (B.buff.def || 0) - cut;
@@ -3006,7 +3119,7 @@ async function enemyAct(e) {
   if (e.intent === 'fare' && e.bossType === 'frycook') {
     say(`${esc(e.full)} uses <b>Grease Fire</b>!`);
     await fly({ x: eb.cx, y: eb.cy }, HERO_C, 'blob', '#f5c542', 380);
-    const d = Math.max(1, Math.round(e.atk * 0.6 * fd().defK / (fd().defK + Math.max(0, heroDef()))));
+    const d = soakShield(Math.max(1, Math.round(e.atk * 0.6 * fd().defK / (fd().defK + Math.max(0, heroDef())))));
     G.hp -= d; flashHp(); popHero('-' + d, '#ff8a3a');
     B.poison = 3; B.poisonDmg = Math.round(e.atk * 0.25); B.burn = true; B.bleed = false;
     say(`You take <b>${d}</b> damage and catch fire! You'll burn for 3 turns.`);
@@ -3053,6 +3166,14 @@ async function enemyAct(e) {
   let dmg = raw * K / (K + Math.max(0, heroDef()));
   if (e.intent === 'heavy') dmg *= 1.6;
   dmg = Math.max(1, Math.round(dmg));
+  if (B.parry) {
+    B.parry = 0;
+    dmg = Math.max(1, Math.round(dmg / 2));
+    say(`<b>Parry!</b> You turn the blow and strike back.`);
+    hitEnemy(e, dmg, 'Riposte! ');
+  }
+  dmg = soakShield(dmg);
+  if (!dmg) return;
   G.hp -= dmg;
   flashHp();
   FX.heroFlash = 12;
@@ -3290,11 +3411,10 @@ function goDownstairs() {
   G.guide = 0; G.safeGuide = 0; G.radar = 0; guidePath = null; safePath = null;
   buildFloor();
   G.pos = { ...FL.start };
+  // Owner: you can change your class at the start of Floor 3. enterMap shows the class change screen.
+  if (CLASS_SWAP_FLOORS.includes(G.floor) && !G.classChanged) G.classChangeOffer = true;
   enterMap(true);
   achieve('floor' + G.floor);
-  // Owner: you can change your class at the start of Floor 3. The class change screen is its own feature;
-  // G.classChangeOffer marks that this hero has earned one (offerClassChange shows it if it exists).
-  if (G.floor === 3 && !G.classChanged) { G.classChangeOffer = true; if (typeof offerClassChange === 'function') offerClassChange(); }
   save();
 }
 

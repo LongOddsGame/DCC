@@ -171,9 +171,31 @@ export const CLASSES = [
     skill: { name: 'Hold the Line', mp: 3, desc: '+5 defense this fight and heal 8.', target: 'self', kind: 'guard' } },
   { id: 'ghost', name: 'Ghost Hunter', desc: 'Owns a vacuum for spirits. It also works on mobs.', mods: { mag: 3, luck: 1, maxMp: 3 }, odds: 6, coat: '#5a5373', coatLight: '#6bbf59', cannot: ['heal', 'fire'], magic: true,
     skill: { name: 'Spirit Vacuum', mp: 4, desc: 'Damage one mob and heal some of it back.', target: 'one', kind: 'drain' } },
+  // ----- New classes (classes update): each has its own move type nobody else has. -----
+  { id: 'repo', name: 'Repo Agent', desc: 'Takes back what is owed. Finishes off whatever is limping.', mods: { atk: 2, luck: 1 }, odds: 4, coat: '#5a5373', coatLight: '#f5c542', cannot: ['heal', 'ice'],
+    skill: { name: 'Final Notice', desc: 'A hit that does double damage to a mob under a third of its health.', target: 'one', kind: 'execute' } },
+  { id: 'wrecker', name: 'Demolition Crew', desc: 'Hard hat, harder hammer. Armor is just a wall with legs.', mods: { atk: 2, maxHp: 6, spd: -1 }, odds: 2, coat: '#f5c542', coatLight: '#ff8a3a', cannot: ['ice', 'storm', 'heal'],
+    skill: { name: 'Jackhammer', desc: 'A hit that ignores armor and cracks it: the mob loses 2 defense for the fight.', target: 'one', kind: 'shred' } },
+  { id: 'fencer', name: 'Fencing Coach', desc: 'Light on their feet. Waits for you to make the mistake.', mods: { spd: 2, def: 1 }, odds: 3, coat: '#fff6e0', coatLight: '#3a6ea5', cannot: ['poison', 'blood'],
+    skill: { name: 'En Garde', desc: 'Ready a parry. The next hit on you is halved and you hit back for the same amount.', target: 'self', kind: 'parry' } },
+  { id: 'shark', name: 'Card Shark', desc: 'Counts cards, bends odds, and bets on themself every time.', mods: { luck: 4, cha: 1 }, odds: 8, coat: '#2f7a3c', coatLight: '#c8334a', cannot: ['guard'],
+    skill: { name: 'Double or Nothing', desc: 'A coin flip: a huge 2.2x hit or a weak 0.4x one. Luck tips the coin.', target: 'one', kind: 'gamble' } },
+  { id: 'auditor', name: 'Tax Auditor', desc: 'Finds every loose coin. Including your mana.', mods: { mag: 2, maxMp: 6, cha: -1 }, odds: 5, coat: '#8b84a3', coatLight: '#e8dcc0', cannot: ['blood', 'fire'], magic: true,
+    skill: { name: 'Audit', desc: 'Magic damage that pays you back 2 MP.', target: 'one', kind: 'audit', color: '#6bbf59' } },
+  { id: 'pinball', name: 'Pinball Wizard', desc: 'High score on every machine in the arcade. Tilts reality.', mods: { mag: 3, luck: 1 }, odds: 6, coat: '#ff5fa2', coatLight: '#4fd8e8', cannot: ['guard', 'heal'], magic: true,
+    skill: { name: 'Multiball', desc: 'A magic ball bounces 3 times between random mobs.', target: 'all', kind: 'chain' } },
+  { id: 'dummy', name: 'Crash Test Dummy', desc: 'Built to take hits. Gives them out too, at a cost.', mods: { maxHp: 14, def: 1, mag: -1 }, odds: 3, coat: '#f5c542', coatLight: '#1a1426', cannot: ['heal', 'storm', 'ice'],
+    skill: { name: 'Full Impact', desc: 'A 1.9x hit that also costs you 8% of your max HP.', target: 'one', kind: 'reckless' } },
+  { id: 'butcher', name: 'Butcher', desc: 'Knows every cut. Mobs are just meat that fights back.', mods: { atk: 2, maxHp: 4 }, odds: 3, coat: '#fff6e0', coatLight: '#c8334a', cannot: ['ice', 'storm'],
+    skill: { name: 'Meat Cleaver', desc: 'A deep cut. The mob bleeds for 3 turns, and bleeding ignores armor.', target: 'one', kind: 'bleed' } },
+  { id: 'packer', name: 'Warehouse Packer', desc: 'Wraps anything in anything. Including themself.', mods: { def: 1, maxHp: 6, mag: 1 }, odds: 3, coat: '#b8693a', coatLight: '#e8dcc0', cannot: ['fire', 'blood'],
+    skill: { name: 'Bubble Wrap', desc: 'Wrap yourself in a shield that soaks 10 plus 1.5 times your magic in damage.', target: 'self', kind: 'barrier' } },
+  { id: 'bounty', name: 'Bounty Hunter', desc: 'Picks a target and never lets it go.', mods: { atk: 1, luck: 2, spd: 1 }, odds: 4, coat: '#7a1c2e', coatLight: '#f5c542', cannot: ['heal'],
+    skill: { name: 'Wanted Poster', desc: 'A light hit that marks one mob. Every hit on it does 30% more for the fight.', target: 'one', kind: 'mark' } },
 ];
 // Class move costs, set by what the move does so every class pays the same for the same power (balance pass 1.0.22).
-const KIND_MP = { double: 4, bolt: 4, flashy: 3, shrapnel: 5, talk: 3, heal: 4, stun: 4, steal: 3, burst: 5, freeze: 4, drain: 4, poison: 4, multi: 4, song: 3, rampage: 5, crit: 5, guard: 3, blind: 4, curse: 4 };
+const KIND_MP = { double: 4, bolt: 4, flashy: 3, shrapnel: 5, talk: 3, heal: 4, stun: 4, steal: 3, burst: 5, freeze: 4, drain: 4, poison: 4, multi: 4, song: 3, rampage: 5, crit: 5, guard: 3, blind: 4, curse: 4,
+  execute: 4, shred: 4, parry: 3, gamble: 4, audit: 4, chain: 5, reckless: 4, bleed: 4, barrier: 4, mark: 3 };
 for (const c of CLASSES) if (KIND_MP[c.skill.kind]) c.skill.mp = KIND_MP[c.skill.kind];
 
 
@@ -448,6 +470,8 @@ export const FLOORS = {
     colors: { floor: ['#6b6b76', '#75757f', '#5f5f69'], wall: ['#3a3a44', '#b8862b', '#2b2b33', '#1e1e25'], safe: ['#2f7a3c', '#3a8a48', '#6bbf59'] } },
 };
 export const LAST_FLOOR = 3; // the deepest floor built so far
+// Arriving on these floors lets the hero swap to any class (owner asked for Floor 3).
+export const CLASS_SWAP_FLOORS = [3];
 // Gear, shop prices, tokens and bombs grow 40% per floor.
 export function floorSize(n) { return 1 + 0.4 * (Math.max(1, n) - 1); }
 export function floorDef(n) { return FLOORS[Math.max(1, Math.min(LAST_FLOOR, n || 1))]; }
