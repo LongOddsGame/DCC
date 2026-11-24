@@ -2491,9 +2491,11 @@ function openSheet(from = 'menu') {
     <h2>CHARACTER SHEET</h2>
     <div class="sheet">${rows}</div>
     <h3 class="sub">MOVES</h3>
+    <p style="font-size:15px"><b style="color:var(--gold)">${G.equip.weapon ? 'Swing' : 'Punch'}</b> (no MP): ${esc(moveLvlNote('weapon'))}, +${Math.round((movePow('weapon') - 1) * 100)}% damage</p>
+    <p style="font-size:15px"><b style="color:var(--gold)">Kick</b> (no MP): ${esc(moveLvlNote('kick'))}, +${Math.round((movePow('kick') - 1) * 100)}% damage</p>
     <p style="font-size:15px"><b style="color:var(--gold)">${esc(c.skill.name)}</b> (${moveMp('class', c.skill)} MP): ${esc(c.skill.desc)} <span style="color:var(--cyan)">${esc(moveLvlNote('class'))}</span></p>
     ${G.moves.map((m) => `<p style="font-size:15px"><b style="color:var(--gold)">${esc(MOVES[m].name)}</b> (${moveMp(m, MOVES[m])} MP): ${esc(MOVES[m].desc)} <span style="color:var(--cyan)">${esc(moveLvlNote(m))}</span></p>`).join('')}
-    <p class="muted" style="font-size:14px">Moves level up the more you use them, with no max level. Each level needs more uses than the last. +10% power per level up to Lv 5, then +5% per level, and the MP cost drops now and then (never below half).</p>
+    <p class="muted" style="font-size:14px">Moves level up the more you use them, with no max level. Each level needs more uses than the last. +10% power per level up to Lv 5, then +5% per level, and mana moves cost less MP now and then (never below half). Swing/Punch and Kick level up the same way.</p>
     <p style="font-size:14px;color:#ff8a8a">${esc(cannotText(c))}</p>
     <p class="muted" style="font-size:14px">Every level gives +6 HP, +3 MP, +1 STR, +1 INT, and +1 DEF every other level. Gear, enhancements, race and class add the rest.</p>
     <button class="btn grey" data-act="sheetback" style="position:sticky; bottom:0">BACK</button>`);
@@ -2650,8 +2652,10 @@ function fightOptions() {
   const est = (n) => Math.max(1, Math.round(n));
   const n = Math.max(1, alive().length);
   const free = [], items = [], mana = [];
-  free.push({ id: 'weapon', label: w ? 'Swing ' + w.name : 'Punch', type: w ? 'WEAPON' : 'PHYSICAL', info: 'Hits one mob.', dmg: est(heroAtk() + 1 - avgDef()), target: 'one' });
-  free.push({ id: 'kick', label: 'Kick', type: 'PHYSICAL', info: 'Weaker, but stops a wind-up.', dmg: est((heroAtk() + 1) * 0.7 - avgDef()), target: 'one' });
+  // Regular moves level up with use too (owner request), same curve as mana moves but no MP.
+  const lv = (id) => (moveLvl(id) > 1 ? ' Lv' + moveLvl(id) : '');
+  free.push({ id: 'weapon', label: (w ? 'Swing ' + w.name : 'Punch') + lv('weapon'), type: w ? 'WEAPON' : 'PHYSICAL', info: 'Hits one mob. ' + moveLvlNote('weapon') + '.', dmg: est((heroAtk() + 1 - avgDef()) * movePow('weapon')), target: 'one' });
+  free.push({ id: 'kick', label: 'Kick' + lv('kick'), type: 'PHYSICAL', info: 'Weaker, but stops a wind-up. ' + moveLvlNote('kick') + '.', dmg: est(((heroAtk() + 1) * 0.7 - avgDef()) * movePow('kick')), target: 'one' });
   for (const id of G.order) {
     if (count(id) > 0 && ITEMS[id].type === 'bomb') {
       const mult = (G.race === 'gnome' ? 1.5 : 1) * (hasPerk('demo') ? 1.3 : 1);
@@ -2838,9 +2842,11 @@ async function doPlayer(action, targetId) {
     if (G.race === 'orc' && G.hp < s.maxHp / 3) { dmg *= 1.5; say('Orc rage!'); }
     const crit = R.chance(0.05 + s.luck * 0.01);
     if (crit) dmg *= 1.5;
-    hitEnemy(target, dmg, crit ? 'Critical! ' : '');
-    if (action === 'weapon' && G.race === 'werewolf' && target.alive && R.chance(0.2)) { await sleep(200); burst(tb.cx, tb.cy, 'slash', '#c8334a'); hitEnemy(target, heroAtk() + R.int(0, 2) - def, 'You lunge again! '); }
+    const pow = movePow(action);
+    hitEnemy(target, dmg * pow, crit ? 'Critical! ' : '');
+    if (action === 'weapon' && G.race === 'werewolf' && target.alive && R.chance(0.2)) { await sleep(200); burst(tb.cx, tb.cy, 'slash', '#c8334a'); hitEnemy(target, (heroAtk() + R.int(0, 2) - def) * pow, 'You lunge again! '); }
     if (G.race === 'goblin' && R.chance(0.25)) { const t = R.int(1, 3); G.tokens += t; say(`You swipe ${t} tokens.`); }
+    gainMoveXp(action, { name: action === 'kick' ? 'Kick' : w ? 'Swing' : 'Punch', mp: 0 });
   } else if (action.startsWith('move:')) {
     await castMove(action.slice(5), target);
   } else if (action.startsWith('bomb:')) {
@@ -2903,7 +2909,7 @@ function gainMoveXp(id, def) {
   const l = moveLvl(id);
   if (l > before) {
     if (B) popHero('MOVE LV ' + l + '!', '#4fd8e8');
-    say(`<span class="good"><b>${esc(def.name)}</b> grew to Lv ${l}!</span> +${l <= 5 ? 10 : 5}% power${mpCut(l) > mpCut(l - 1) ? ' and costs 1 less MP' : ''}.`);
+    say(`<span class="good"><b>${esc(def.name)}</b> grew to Lv ${l}!</span> +${l <= 5 ? 10 : 5}% power${def.mp && mpCut(l) > mpCut(l - 1) ? ' and costs 1 less MP' : ''}.`);
     bookie(R.pick(['Practice makes perfect. Or at least more painful.', 'That move is getting a fan club.', 'Look at that. The crawler is learning.']));
   }
 }
