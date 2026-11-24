@@ -284,6 +284,7 @@ const BASE_ITEMS = {
   j_jelly: { name: 'Slime Jelly', type: 'junk', rarity: 'common', value: 3, edible: 6, desc: 'Crafting material. Technically edible.' },
   j_tail: { name: 'Rat Tail', type: 'junk', rarity: 'common', value: 2, edible: 4, desc: 'Crafting material. Technically edible.' },
   j_scrap: { name: 'Scrap', type: 'junk', rarity: 'common', value: 0, nosell: true, desc: 'From breaking down gear at the bench. Stands in for any missing material when you upgrade gear.' },
+  j_dust: { name: 'Glow Dust', type: 'junk', rarity: 'common', value: 4, price: 12, desc: 'Enchanting material. Use it at the workbench (Enchant tab).' },
   j_feather: { name: 'Pigeon Feather', type: 'junk', rarity: 'common', value: 1, desc: 'Crafting material for the bench.' },
   scroll_venom: { name: 'Scroll of Venom Dart', type: 'scroll', rarity: 'rusty', teaches: 'venom', desc: 'Teaches Venom Dart. Learn it in a safe room.' },
   scroll_iron: { name: 'Scroll of Iron Skin', type: 'scroll', rarity: 'rusty', teaches: 'iron', desc: 'Teaches Iron Skin. Learn it in a safe room.' },
@@ -328,10 +329,10 @@ export function baseId(id) { return String(id).split('@')[0]; }
 
 // What each loot box tier can hold. [itemId, weight, minCount, maxCount]
 export const LOOT = {
-  box_rusty: [['potion_heal', 5, 1, 2], ['food_pretzel', 4, 1, 3], ['food_hotdog', 2, 1, 1], ['bomb', 3, 1, 2], ['potion_mystery', 2, 1, 1], ['w_pipe', 1, 1, 1], ['a_vest', 1, 1, 1], ['j_wire', 3, 1, 2], ['potion_mana', 2, 1, 1], ['potion_radar', 2, 1, 1], ['potion_path', 2, 1, 1], ['potion_safe', 2, 1, 1], ['scroll_venom', 1, 1, 1], ['scroll_iron', 1, 1, 1], ['h_cap', 1, 1, 1], ['s_tee', 1, 1, 1], ['r_band', 1, 1, 1], ['f_flops', 1, 1, 1], ['j_feather', 2, 1, 2], ['n_whistle', 1, 1, 1], ['g_mood', 1, 1, 1], ['l_shorts', 1, 1, 1], ['k_towel', 1, 1, 1]],
-  box_silver: [['potion_heal', 4, 2, 3], ['potion_big', 3, 1, 1], ['potion_mana', 3, 1, 2], ['potion_mana_big', 1, 1, 1], ['bomb', 3, 2, 3], ['w_bar', 2, 1, 1], ['a_jacket', 2, 1, 1], ['potion_mystery', 2, 1, 2], ['box_rusty', 1, 1, 2], ['potion_radar', 2, 1, 2], ['potion_path', 2, 1, 1], ['scroll_frost', 1, 1, 1], ['scroll_mend', 1, 1, 1], ['scroll_leech', 1, 1, 1], ['h_hardhat', 1, 1, 1], ['s_flannel', 1, 1, 1], ['r_watch', 1, 1, 1], ['f_sneaks', 1, 1, 1], ['h_cap', 1, 1, 1], ['s_tee', 1, 1, 1], ['n_locket', 1, 1, 1], ['g_class', 1, 1, 1], ['g_signet', 1, 1, 1], ['l_jeans', 1, 1, 1], ['k_tarp', 1, 1, 1]],
-  box_gold: [['potion_big', 4, 1, 2], ['bomb_big', 3, 1, 2], ['w_mic', 2, 1, 1], ['a_suit', 2, 1, 1], ['box_silver', 2, 1, 1], ['potion_mana', 2, 1, 2], ['potion_mana_big', 2, 1, 2], ['scroll_fireball', 2, 1, 1], ['scroll_frost', 1, 1, 1], ['potion_radar', 1, 2, 2], ['h_tiara', 1, 1, 1], ['s_jersey', 1, 1, 1], ['r_cuffs', 1, 1, 1], ['f_boots', 1, 1, 1], ['s_flannel', 1, 1, 1], ['n_chain', 1, 1, 1], ['g_ruby', 1, 1, 1], ['l_cargo', 1, 1, 1], ['k_cape', 1, 1, 1]],
-  box_patron: [['w_bat', 2, 1, 1], ['a_coat', 2, 1, 1], ['potion_big', 3, 2, 3], ['potion_mana_big', 3, 1, 2], ['bomb_big', 3, 1, 2], ['box_gold', 1, 1, 1], ['potion_mystery', 2, 3, 4], ['scroll_lightning', 2, 1, 1], ['scroll_fireball', 1, 1, 1], ['h_crown', 1, 1, 1], ['s_silk', 1, 1, 1], ['r_bangle', 1, 1, 1], ['f_loafers', 1, 1, 1], ['n_pendant', 1, 1, 1], ['g_band', 1, 1, 1], ['l_tux', 1, 1, 1], ['k_mink', 1, 1, 1]],
+  box_rusty: [['potion_heal', 5, 1, 2], ['food_pretzel', 4, 1, 3], ['food_hotdog', 2, 1, 1], ['bomb', 3, 1, 2], ['potion_mystery', 2, 1, 1], ['w_pipe', 1, 1, 1], ['a_vest', 1, 1, 1], ['j_wire', 3, 1, 2], ['potion_mana', 2, 1, 1], ['potion_radar', 2, 1, 1], ['potion_path', 2, 1, 1], ['potion_safe', 2, 1, 1], ['scroll_venom', 1, 1, 1], ['scroll_iron', 1, 1, 1], ['h_cap', 1, 1, 1], ['s_tee', 1, 1, 1], ['r_band', 1, 1, 1], ['f_flops', 1, 1, 1], ['j_feather', 2, 1, 2], ['n_whistle', 1, 1, 1], ['g_mood', 1, 1, 1], ['l_shorts', 1, 1, 1], ['k_towel', 1, 1, 1], ['j_dust', 1, 1, 1]],
+  box_silver: [['potion_heal', 4, 2, 3], ['potion_big', 3, 1, 1], ['potion_mana', 3, 1, 2], ['potion_mana_big', 1, 1, 1], ['bomb', 3, 2, 3], ['w_bar', 2, 1, 1], ['a_jacket', 2, 1, 1], ['potion_mystery', 2, 1, 2], ['box_rusty', 1, 1, 2], ['potion_radar', 2, 1, 2], ['potion_path', 2, 1, 1], ['scroll_frost', 1, 1, 1], ['scroll_mend', 1, 1, 1], ['scroll_leech', 1, 1, 1], ['h_hardhat', 1, 1, 1], ['s_flannel', 1, 1, 1], ['r_watch', 1, 1, 1], ['f_sneaks', 1, 1, 1], ['h_cap', 1, 1, 1], ['s_tee', 1, 1, 1], ['n_locket', 1, 1, 1], ['g_class', 1, 1, 1], ['g_signet', 1, 1, 1], ['l_jeans', 1, 1, 1], ['k_tarp', 1, 1, 1], ['j_dust', 3, 1, 2]],
+  box_gold: [['potion_big', 4, 1, 2], ['bomb_big', 3, 1, 2], ['w_mic', 2, 1, 1], ['a_suit', 2, 1, 1], ['box_silver', 2, 1, 1], ['potion_mana', 2, 1, 2], ['potion_mana_big', 2, 1, 2], ['scroll_fireball', 2, 1, 1], ['scroll_frost', 1, 1, 1], ['potion_radar', 1, 2, 2], ['h_tiara', 1, 1, 1], ['s_jersey', 1, 1, 1], ['r_cuffs', 1, 1, 1], ['f_boots', 1, 1, 1], ['s_flannel', 1, 1, 1], ['n_chain', 1, 1, 1], ['g_ruby', 1, 1, 1], ['l_cargo', 1, 1, 1], ['k_cape', 1, 1, 1], ['j_dust', 3, 2, 3]],
+  box_patron: [['w_bat', 2, 1, 1], ['a_coat', 2, 1, 1], ['potion_big', 3, 2, 3], ['potion_mana_big', 3, 1, 2], ['bomb_big', 3, 1, 2], ['box_gold', 1, 1, 1], ['potion_mystery', 2, 3, 4], ['scroll_lightning', 2, 1, 1], ['scroll_fireball', 1, 1, 1], ['h_crown', 1, 1, 1], ['s_silk', 1, 1, 1], ['r_bangle', 1, 1, 1], ['f_loafers', 1, 1, 1], ['n_pendant', 1, 1, 1], ['g_band', 1, 1, 1], ['l_tux', 1, 1, 1], ['k_mink', 1, 1, 1], ['j_dust', 2, 3, 4]],
 };
 // Halved for Floor 3 (owner banked 13,751 tokens by the end of Floor 2).
 export const BOX_TOKENS = { box_rusty: [1, 4], box_silver: [4, 8], box_gold: [9, 15], box_patron: [12, 25] };
@@ -521,7 +522,7 @@ export const RARITY_PRICE = { common: 6, rusty: 12, silver: 28, gold: 60, patron
 
 // Penny's shop gets better on deeper floors. Each tier needs both its floor and its level. Patron boxes are never sold.
 export const SHOP_TIERS = [
-  { lvl: 1, floor: 1, rarity: 'rusty', basics: ['potion_heal', 'potion_mana', 'potion_radar', 'potion_path', 'potion_safe', 'food_hotdog', 'bomb', 'box_rusty'], scrolls: ['scroll_venom', 'scroll_iron'] },
+  { lvl: 1, floor: 1, rarity: 'rusty', basics: ['potion_heal', 'potion_mana', 'potion_radar', 'potion_path', 'potion_safe', 'food_hotdog', 'bomb', 'box_rusty', 'j_dust'], scrolls: ['scroll_venom', 'scroll_iron'] },
   { lvl: 3, floor: 2, rarity: 'silver', basics: ['potion_big', 'potion_mana_big', 'box_silver'], scrolls: ['scroll_frost', 'scroll_mend', 'scroll_leech'] },
   { lvl: 5, floor: 4, rarity: 'gold', basics: ['bomb_big', 'box_gold'], scrolls: ['scroll_fireball'] },
   { lvl: 8, floor: 7, rarity: 'patron', basics: [], scrolls: ['scroll_lightning'] },
@@ -550,3 +551,17 @@ export const RECIPES = [
   { out: 'r_cuffs', lvl: 5, need: { r_band: 1, j_token: 4 }, tokens: 20 },
   { out: 'h_tiara', lvl: 6, need: { h_hardhat: 1, j_token: 4 }, tokens: 30 },
 ];
+
+// Enchanting (owner request): one enchantment per piece of gear, put on at the workbench with Glow Dust.
+// Stat enchants grow with the floor you enchant on (floorSize), so re-enchanting deeper makes them stronger.
+// floor: the first floor it can be used on. leech: melee hits heal you a share of the damage.
+export const ENCHANTS = {
+  sharp: { name: 'Sharp', floor: 1, stats: { atk: 2 }, desc: '+2 attack' },
+  sturdy: { name: 'Sturdy', floor: 1, stats: { def: 2 }, desc: '+2 defense' },
+  vital: { name: 'Vital', floor: 1, stats: { maxHp: 10 }, desc: '+10 HP' },
+  arcane: { name: 'Arcane', floor: 1, stats: { mag: 2, maxMp: 4 }, desc: '+2 magic, +4 MP' },
+  swift: { name: 'Swift', floor: 2, stats: { spd: 2 }, desc: '+2 speed' },
+  lucky: { name: 'Lucky', floor: 2, stats: { luck: 3, cha: 1 }, desc: '+3 luck, +1 charisma' },
+  scholar: { name: 'Scholar', floor: 3, stats: { xpPct: 6 }, desc: '+6% XP' },
+  leeching: { name: 'Leeching', floor: 3, stats: {}, leech: 0.06, desc: 'Melee hits heal you 6% of the damage (stacks)' },
+};

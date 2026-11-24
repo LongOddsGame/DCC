@@ -1,13 +1,15 @@
 // Long Odds prototype. Game state, map, battles, bag, safe room and screens.
 import { R, makeRng, newSeed } from './rng.js?v=__BUILD_VERSION__';
-import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, GEAR_TYPES, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, FLOORS, LAST_FLOOR, CLASS_SWAP_FLOORS, MINIONS, floorDef, floorSize, baseId, RECIPES, SCHOOL_NAMES } from './data.js?v=__BUILD_VERSION__';
+import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, GEAR_TYPES, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, FLOORS, LAST_FLOOR, CLASS_SWAP_FLOORS, MINIONS, floorDef, floorSize, baseId, RECIPES, SCHOOL_NAMES, ENCHANTS } from './data.js?v=__BUILD_VERSION__';
 import { generateFloor, tutorialFloor, roomAt, makeGroup, isEasyStart, walkable, tileAt, stageAt, T, key } from './dungeon.js?v=__BUILD_VERSION__';
-import { sprite, heroSprite, flipped, docSprite, boxSprite, mobSprite, itemIcon, slotIcon } from './sprites.js?v=__BUILD_VERSION__';
+import { sprite, heroSprite, flipped, docSprite, npcSprite, boxSprite, mobSprite, itemIcon, slotIcon } from './sprites.js?v=__BUILD_VERSION__';
+import { QUESTS, QUEST_BY_ID, QUEST_NPCS, QUEST_ACHIEVEMENTS } from './quests.js?v=__BUILD_VERSION__';
 import { SLOT_COUNT, readSlot, writeSlot, deleteSlot, listSlots, exportCode, importCode } from './save.js?v=__BUILD_VERSION__';
 import { VERSION, checkForUpdate, installUpdate } from './version.js?v=__BUILD_VERSION__';
 import { SUGGEST_KEY, COUNTER_CODE } from './config.js?v=__BUILD_VERSION__';
 import { trackPlay, flushStats, statsOn, setStatsOn, playerName, setPlayerName } from './stats.js?v=__BUILD_VERSION__';
 
+Object.assign(ACHIEVEMENTS, QUEST_ACHIEVEMENTS);
 const $ = (id) => document.getElementById(id);
 const canvas = $('game');
 const ctx = canvas.getContext('2d');
@@ -225,7 +227,7 @@ function docMood() {
 }
 
 // ---------- New game, loading, saving ----------
-function newGame(slot, name, jobId, raceId, clsId, tutorial = true, perks = [], sex = 'm') {
+function newGame(slot, name, jobId, raceId, clsId, tutorial = false, perks = [], sex = 'm') {
   const seed = newSeed();
   G = {
     v: 3, slot, name, sex, job: jobId, perks: perks.slice(), race: raceId, cls: clsId, seed, floor: tutorial ? 0 : 1,
@@ -235,6 +237,7 @@ function newGame(slot, name, jobId, raceId, clsId, tutorial = true, perks = [], 
     odds: oddsStart(byId(RACES, raceId).odds, byId(CLASSES, clsId).odds), hype: 0, oddsV: 2,
     opened: [], killed: [], bossesDead: [], cleared: false,
     doc: { trust: 0, fear: 0, respect: 0, owed: 0, met: false, eventDone: false, gift: false, memory: [] },
+    q: { a: {}, d: [], ann: {} },
     sideFx: {}, ach: {}, boxesOpened: 0, deaths: 0, kills: 0, spared: 0, steps: 0, playTime: 0, buff: null,
   };
   if (hasPerk('charmer')) G.doc.trust += 10;
@@ -246,6 +249,7 @@ function newGame(slot, name, jobId, raceId, clsId, tutorial = true, perks = [], 
   G.hp = s.maxHp; G.mp = s.maxMp;
   addItem('potion_heal', 2, true);
   addItem('food_pretzel', 1, true);
+  addItem('potion_safe', 1, true); // the tutorial is gone, so new heroes get a way to find the first safe room
   addItem('w_pipe', 1, true);
   G.equip.weapon = 'w_pipe';
   if (clsId === 'scrapper') addItem('bomb', 3, true);
@@ -297,6 +301,9 @@ function loadSlot(i) {
   const oldWorld = (G.v || 1) < 3;
   if (oldWorld) { G.opened = []; G.killed = []; G.seen = ''; G.bossesDead = []; G.cleared = false; G.v = 3; }
   delete G.timeLeft; delete G.timerWarn; delete G.bossDead;
+  // The practice floor is gone (owner: quests teach the game now). Heroes saved there start Floor 1.
+  if (G.floor === 0) { G.floor = 1; G.opened = []; G.killed = []; G.seen = ''; G.respawnT = 0; G.pos = null; }
+  questState();
   buildFloor();
   if (oldWorld || !G.pos || !walkable(FL, G.pos.x, G.pos.y)) G.pos = { ...FL.start };
   if ((G.upgV || 1) < 2) refundOverCap();
@@ -360,6 +367,7 @@ function updateHud() {
   const h = Math.max(0, Math.min(5, Math.floor((G.hype / hypeNeed()) * 5)));
   $('hud-hype').textContent = '▮'.repeat(h) + '▯'.repeat(5 - h);
   $('hud-tokens').textContent = G.tokens;
+  questCheck();
 }
 
 // ---------- Screens (overlay) ----------
@@ -602,8 +610,7 @@ function renderCreate() {
         <p class="muted" style="font-size:14px">${cr.perks.map((p) => esc(PERKS[p].name)).join(' + ')}</p>
         <p style="color:var(--gold); font-size:15px">Starting odds ${oddsStart(r.odds, c.odds)} to 1</p></div></div>
       <div class="bookie"><img src="${sprite('bookie').toDataURL()}" alt=""><p><b style="color:var(--pink)">BOOKIE:</b> ${r.odds + c.odds >= 20 ? 'A long shot! The Patrons love a long shot. Mostly to watch it fail.' : 'A safe pick. Boring, but the Patrons respect a sure thing.'}</p></div>
-      <div class="grid2"><button class="btn grey" data-act="back">BACK</button><button class="btn red" data-act="begin">START TUTORIAL</button></div>
-      <button class="btn" data-act="beginskip">SKIP TUTORIAL, GO TO FLOOR 1</button>`);
+      <div class="grid2"><button class="btn grey" data-act="back">BACK</button><button class="btn red" data-act="begin">ENTER FLOOR 1</button></div>`);
   }
 }
 Object.assign(overlayHandlers, {
@@ -625,8 +632,7 @@ Object.assign(overlayHandlers, {
     // Going back from the race step skips the story screen.
     cr.step = CREATE_STEPS[cr.step === 'race' ? 1 : at - 1]; renderCreate();
   },
-  begin: () => newGame(cr.slot, cr.name.trim().slice(0, 14), cr.job, cr.race, cr.cls, true, cr.perks, cr.sex),
-  beginskip: () => newGame(cr.slot, cr.name.trim().slice(0, 14), cr.job, cr.race, cr.cls, false, cr.perks, cr.sex),
+  begin: () => newGame(cr.slot, cr.name.trim().slice(0, 14), cr.job, cr.race, cr.cls, false, cr.perks, cr.sex),
 });
 
 // ---------- Hints and BOOKIE's camera booths ----------
@@ -881,8 +887,28 @@ function gearStats(id) {
   const it = id && ITEMS[id];
   const o = {};
   if (it) for (const k in STAT_NAMES) if (it[k]) o[k] = it[k] + upgBonus(id, k, upgLevel(id));
+  const en = it && enchOf(id);
+  if (en) for (const [k, v] of Object.entries(enchStats(en))) o[k] = (o[k] || 0) + v;
   return o;
 }
+// ----- Enchanting: one enchantment per item (every copy, like upgrades), saved as G.ench[id] = { e, f } -----
+function enchOf(id) { const x = G && G.ench && G.ench[id]; return x && ENCHANTS[x.e] ? x : null; }
+function enchStats(x) {
+  const d = ENCHANTS[x.e], m = floorSize(x.f || 1), o = {};
+  for (const [k, v] of Object.entries(d.stats)) o[k] = k === 'xpPct' || k === 'cha' ? v : Math.round(v * m);
+  return o;
+}
+function enchDesc(x) {
+  const d = ENCHANTS[x.e];
+  const parts = Object.entries(enchStats(x)).map(([k, v]) => '+' + v + ' ' + STAT_NAMES[k]);
+  if (d.leech) parts.push('melee heals ' + Math.round(d.leech * 100) + '%');
+  return parts.join(', ');
+}
+function enchCost() { const f = Math.max(1, G.floor || 1); return { dust: 1 + f, tokens: Math.round(10 * fsize()) }; }
+function canEnchant() { const c = enchCost(); return count('j_dust') >= c.dust && G.tokens >= c.tokens; }
+function enchantsHere() { return Object.entries(ENCHANTS).filter(([, d]) => d.floor <= Math.max(1, G.floor || 1)); }
+function wornEnchants() { return GEAR_SLOTS.filter((sl) => G.equip[sl] && enchOf(G.equip[sl])); }
+function leechShare() { return wornEnchants().reduce((a, sl) => a + (ENCHANTS[enchOf(G.equip[sl]).e].leech || 0), 0); }
 // ----- Upgrade table: raise a piece of gear up to +5 -----
 const UPG_MAX = 5;
 // Each floor caps how far you can upgrade (owner maxed everything on Floor 1): +2 on Floor 1, +3 on Floor 2...
@@ -942,6 +968,8 @@ function itemName(id) { const l = isGear(id) ? upgLevel(id) : 0; return ITEMS[id
 function statText(id) {
   const parts = Object.entries(gearStats(id)).map(([k, v]) => (v > 0 ? '+' : '') + v + ' ' + STAT_NAMES[k]);
   if (ITEMS[id].hype) parts.push('earns hype');
+  const en = enchOf(id);
+  if (en) parts.push('✦' + ENCHANTS[en.e].name + (ENCHANTS[en.e].leech ? ' (melee heals)' : ''));
   return parts.join(', ');
 }
 // The change to each stat if you swapped this in for what you wear now.
@@ -1265,6 +1293,7 @@ Object.assign(overlayHandlers, {
     addItem(id, n, true);
     if (ITEMS[id].type === 'box') addBound(id, n);
     if (special) (G.shopBought[stockKey()] = G.shopBought[stockKey()] || []).push(id);
+    questEvent('buy', n);
     updateHud();
     renderShop(equipNowHtml(id, 'shop') || `<p class="note good">Bought ${esc(ITEMS[id].name)}${n > 1 ? ' x' + n : ''} for ${p * n} tokens.</p>`);
   },
@@ -1276,13 +1305,16 @@ Object.assign(overlayHandlers, {
     const price = sellPrice(id);
     G.tokens += price * n;
     removeItem(id, n, true);
+    questEvent('sell', n);
     updateHud();
     renderShop(`<p class="note good">Sold ${esc(ITEMS[id].name)}${n > 1 ? ' x' + n : ''} for ${price * n} tokens.</p>`);
   },
   selljunk: () => {
     let v = 0;
-    for (const id of junkList()) { const n = sellableCount(id); if (n > 0) { v += n * sellPrice(id); removeItem(id, n, true); } }
+    let sold = 0;
+    for (const id of junkList()) { const n = sellableCount(id); if (n > 0) { v += n * sellPrice(id); sold += n; removeItem(id, n, true); } }
     G.tokens += v;
+    if (sold) questEvent('sell', sold);
     updateHud();
     renderShop(`<p class="note good">Sold all junk for ${v} tokens.</p>`);
   },
@@ -1311,6 +1343,7 @@ Object.assign(overlayHandlers, {
     G.tokens -= c;
     G.train = G.train || {};
     G.train[k] = (G.train[k] || 0) + 1;
+    questEvent('train');
     if (k === 'maxHp') G.hp = Math.min(stats().maxHp, G.hp + TRAIN[k].gain);
     if (k === 'maxMp') G.mp = Math.min(stats().maxMp, G.mp + TRAIN[k].gain);
     updateHud();
@@ -1347,6 +1380,7 @@ function craftTimes(r, times) {
     addItem(r.out, 1, true);
     if (!G.crafted) { G.crafted = 0; bookie('Arts and crafts on a death show. The Patrons find it adorable.'); }
     G.crafted++;
+    questEvent('craft', 1, { ctype: recipeType(r) });
   }
 }
 let benchTab = 'craft';
@@ -1361,7 +1395,7 @@ function recipeType(r) {
 let craftType = 'all';
 function openBench() { moveHeld = null; renderBench(); }
 function benchTabs() {
-  return `<div class="tabs"><button class="tab ${benchTab === 'craft' ? 'on' : ''}" data-act="benchtab" data-id="craft">Crafting</button><button class="tab ${benchTab === 'upgrade' ? 'on' : ''}" data-act="benchtab" data-id="upgrade">Upgrade</button><button class="tab ${benchTab === 'salvage' ? 'on' : ''}" data-act="benchtab" data-id="salvage">Break down</button></div>`;
+  return `<div class="tabs"><button class="tab ${benchTab === 'craft' ? 'on' : ''}" data-act="benchtab" data-id="craft">Crafting</button><button class="tab ${benchTab === 'upgrade' ? 'on' : ''}" data-act="benchtab" data-id="upgrade">Upgrade</button><button class="tab ${benchTab === 'enchant' ? 'on' : ''}" data-act="benchtab" data-id="enchant">Enchant</button><button class="tab ${benchTab === 'salvage' ? 'on' : ''}" data-act="benchtab" data-id="salvage">Break down</button></div>`;
 }
 function renderUpgrade(extra = '') {
   const ids = G.order.filter((id) => isGear(id) && count(id) > 0).sort((a, b) => (isEquipped(b) - isEquipped(a)) || gearScore(b) - gearScore(a));
@@ -1393,6 +1427,70 @@ function renderUpgrade(extra = '') {
     <div class="items">${rows}</div>
     <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
 }
+// Enchant tab: pick a piece of gear, then pick an enchantment. A new one replaces the old one.
+let enchPick = null;
+function renderEnchant(extra = '') {
+  const c = enchCost();
+  const costHtml = `<span class="${count('j_dust') >= c.dust ? 'ok' : 'no'}">Glow Dust ${Math.min(count('j_dust'), c.dust)}/${c.dust}</span>, <span class="${G.tokens >= c.tokens ? 'ok' : 'no'}">${c.tokens} tokens</span>`;
+  let body;
+  if (enchPick && isGear(enchPick) && count(enchPick) > 0) {
+    const id = enchPick, it = ITEMS[id], cur = enchOf(id);
+    const opts = enchantsHere().map(([eid, d]) => {
+      const x = { e: eid, f: Math.max(1, G.floor || 1) };
+      const same = cur && cur.e === eid && (cur.f || 1) >= x.f;
+      return `<div class="item"><div class="txt"><span class="nm" style="color:var(--cyan)">✦ ${esc(d.name)}</span><span class="ds">${esc(enchDesc(x))}</span></div>
+        <button class="act purple" data-act="enchant" data-id="${eid}" ${!same && canEnchant() ? '' : 'disabled'}>${same ? 'Has it' : 'Enchant'}</button></div>`;
+    }).join('');
+    const later = Object.values(ENCHANTS).filter((d) => d.floor > Math.max(1, G.floor || 1));
+    body = `<div class="item on"><img src="${icon(id)}" alt=""><div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))}</span>
+      <span class="ds">${esc(SLOT_NAMES[it.type])}: ${esc(statText(id))}</span>
+      <span class="need">${cur ? `Now: <span class="ok">✦ ${esc(ENCHANTS[cur.e].name)} (${esc(enchDesc(cur))})</span>. A new enchantment replaces it.` : 'No enchantment yet.'}</span></div></div>
+      <p class="muted" style="font-size:14px;margin:0">Each costs ${costHtml}.</p>
+      <div class="items">${opts}</div>
+      ${later.length ? `<p class="muted" style="font-size:14px">Deeper floors unlock: ${later.map((d) => `${esc(d.name)} (Floor ${d.floor})`).join(', ')}.</p>` : ''}
+      <button class="btn grey" data-act="enchback">PICK ANOTHER ITEM</button>`;
+  } else {
+    enchPick = null;
+    const ids = G.order.filter((id) => isGear(id) && count(id) > 0).sort((a, b) => (isEquipped(b) - isEquipped(a)) || gearScore(b) - gearScore(a));
+    body = `<div class="items">${ids.map((id) => {
+      const it = ITEMS[id], cur = enchOf(id);
+      return `<div class="item ${isEquipped(id) ? 'on' : ''}"><img src="${icon(id)}" alt="">
+        <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))}${isEquipped(id) ? ' <span class="equipped">EQUIPPED</span>' : ''}</span>
+        <span class="need">${cur ? `<span class="ok">✦ ${esc(ENCHANTS[cur.e].name)}: ${esc(enchDesc(cur))}</span>` : '<span class="muted">No enchantment</span>'}</span></div>
+        <button class="act purple" data-act="enchpick" data-id="${id}">${cur ? 'Change' : 'Choose'}</button></div>`;
+    }).join('') || '<p class="muted">You have no gear to enchant yet.</p>'}</div>`;
+  }
+  showOverlay(`
+    <div class="row-between"><h2>WORKBENCH</h2><span class="tok">${count('j_dust')} Dust · ${G.tokens} tokens</span></div>
+    ${benchTabs()}
+    ${extra}
+    <p class="muted" style="font-size:15px">Enchant your gear with <b style="color:var(--cyan)">Glow Dust</b> (mobs, boxes, Penny, and breaking down silver or better gear). Each piece holds one enchantment, on every copy you own. Enchantments are stronger on deeper floors, so re-enchant as you go down.</p>
+    ${body}
+    <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
+}
+Object.assign(overlayHandlers, {
+  enchpick: (_, b) => { enchPick = b.dataset.id; renderEnchant(); overlay.scrollTop = 0; },
+  enchback: () => { enchPick = null; renderEnchant(); },
+  enchant: (_, b) => {
+    const id = enchPick, eid = b.dataset.id;
+    if (!id || !ENCHANTS[eid] || ENCHANTS[eid].floor > Math.max(1, G.floor || 1) || !canEnchant()) return;
+    const c = enchCost();
+    const before = stats();
+    removeItem('j_dust', c.dust);
+    G.tokens -= c.tokens;
+    G.ench = G.ench || {};
+    G.ench[id] = { e: eid, f: Math.max(1, G.floor || 1) };
+    const s2 = stats();
+    G.hp = Math.min(s2.maxHp, G.hp + Math.max(0, s2.maxHp - before.maxHp));
+    G.mp = Math.min(s2.maxMp, G.mp + Math.max(0, s2.maxMp - before.maxMp));
+    say(`Enchanted <span class="loot">${esc(itemName(id))}</span> with <b>${esc(ENCHANTS[eid].name)}</b>!`);
+    bookie(R.pick(['Sparkly! The Patrons love a little glitter.', 'Magic on a budget. Very on brand.', 'That thing is glowing now. Probably safe.']));
+    questEvent('enchant');
+    updateHud();
+    save();
+    renderEnchant(`<div class="reveal"><p class="note good">${esc(itemName(id))} is now ✦ ${esc(ENCHANTS[eid].name)}: ${esc(enchDesc(G.ench[id]))}.</p></div>`);
+  },
+});
 // Break down: turn spare gear (including shop-box gear you can't sell) into Scrap for upgrades.
 function renderSalvage(extra = '') {
   const scroll = overlay.hidden ? 0 : overlay.scrollTop;
@@ -1409,7 +1507,7 @@ function renderSalvage(extra = '') {
   showOverlay(`
     <div class="row-between"><h2>WORKBENCH</h2><span class="tok">${count('j_scrap')} Scrap</span></div>
     ${benchTabs()}
-    <p class="muted" style="font-size:15px">Break spare gear down into <b style="color:var(--gold)">Scrap</b>. On the Upgrade tab, Scrap fills in for up to half of the materials an upgrade needs. Rarer gear gives more: common 1, rusty 2, silver 3, gold 5, patron 8, plus 1 per upgrade level.</p>
+    <p class="muted" style="font-size:15px">Break spare gear down into <b style="color:var(--gold)">Scrap</b>. On the Upgrade tab, Scrap fills in for up to half of the materials an upgrade needs. Rarer gear gives more: common 1, rusty 2, silver 3, gold 5, patron 8, plus 1 per upgrade level. Silver and better gear also gives <b style="color:var(--cyan)">Glow Dust</b> for enchanting.</p>
     <div class="items">${rows}</div>
     ${extra ? `<div class="shop-toast">${extra}</div>` : ''}
     <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
@@ -1417,6 +1515,7 @@ function renderSalvage(extra = '') {
 }
 function renderBench(extra = '') {
   if (benchTab === 'upgrade') return renderUpgrade(extra);
+  if (benchTab === 'enchant') return renderEnchant(extra);
   if (benchTab === 'salvage') return renderSalvage(extra);
   const sorted = RECIPES.slice().sort((a, b) => (canCraft(b) - canCraft(a)) || ((G.lvl >= b.lvl) - (G.lvl >= a.lvl)) || a.lvl - b.lvl);
   const inType = (t) => sorted.filter((r) => recipeType(r) === t);
@@ -1459,7 +1558,7 @@ Object.assign(overlayHandlers, {
     updateHud();
     renderBench(`<div class="reveal">${equipNowHtml(r.out, 'bench') || `<p class="note good">You made ${esc(ITEMS[r.out].name)}!</p>`}</div>`);
   },
-  benchtab: (_, b) => { benchTab = b.dataset.id; hideOverlay(); renderBench(); },
+  benchtab: (_, b) => { benchTab = b.dataset.id; enchPick = null; hideOverlay(); renderBench(); },
   crafttype: (_, b) => { craftType = b.dataset.id; hideOverlay(); renderBench(); },
   salvage: (_, b) => {
     const id = b.dataset.id;
@@ -1467,9 +1566,12 @@ Object.assign(overlayHandlers, {
     if (!isGear(id) || spare <= 0) return;
     const n = b.dataset.n === 'all' ? spare : 1;
     const y = scrapFor(id) * n;
+    const dust = ({ silver: 1, gold: 2, patron: 3 }[ITEMS[id].rarity] || 0) * n;
     removeItem(id, n);
     addItem('j_scrap', y, true);
-    say(`Broke down ${esc(ITEMS[id].name)}${n > 1 ? ' x' + n : ''} into <span class="loot">${y} Scrap</span>.`);
+    if (dust) addItem('j_dust', dust, true);
+    questEvent('salvage', n);
+    say(`Broke down ${esc(ITEMS[id].name)}${n > 1 ? ' x' + n : ''} into <span class="loot">${y} Scrap${dust ? ` and ${dust} Glow Dust` : ''}</span>.`);
     renderSalvage(`<p class="note good">+${y} Scrap (you have ${count('j_scrap')}).</p>`);
   },
   upgrade: (_, b) => {
@@ -1483,6 +1585,7 @@ Object.assign(overlayHandlers, {
     const before = stats();
     G.upg = G.upg || {};
     G.upg[id] = upgLevel(id) + 1;
+    questEvent('upgrade');
     const s2 = stats();
     G.hp = Math.min(s2.maxHp, G.hp + Math.max(0, s2.maxHp - before.maxHp));
     G.mp = Math.min(s2.maxMp, G.mp + Math.max(0, s2.maxMp - before.maxMp));
@@ -1538,6 +1641,10 @@ function enterMap(fresh) {
     bookie('Welcome back, ' + G.name + '. The cameras never stopped rolling.');
   }
   if (G.upgNote) { say(`<b>${esc(G.upgNote)}</b>`); G.upgNote = ''; }
+  if (!FL.tutorial && !questState().intro) {
+    G.q.intro = true;
+    bookie('People in the safe rooms have QUESTS for you. Look for a gold ! over their heads. Tap Quests at the bottom to track them.');
+  }
   updateHud();
   renderControls();
   // A class swap waits until it is picked, even if the game is closed on the swap screen.
@@ -1599,7 +1706,7 @@ function renderControls() {
     return;
   }
   if (mode === 'map') {
-    controls.innerHTML = `<div class="small-row map-bar"><button class="chip" data-k="bag">Bag</button><button class="chip" data-k="gear">Gear</button><button class="chip" data-k="map">Map</button><button class="chip" data-k="menu">Pause</button></div>`;
+    controls.innerHTML = `<div class="small-row map-bar"><button class="chip" data-k="bag">Bag</button><button class="chip" data-k="gear">Gear</button><button class="chip" data-k="map">Map</button><button class="chip" data-k="quests">Quests${G && G.q && readyQuests().length ? `<b class="qbadge">${readyQuests().length}</b>` : ''}</button><button class="chip" data-k="menu">Pause</button></div>`;
   } else if (mode === 'battle') renderBattleControls();
   fitView();
 }
@@ -1625,6 +1732,7 @@ controls.addEventListener('click', (e) => {
     if (k.dataset.k === 'gear') openGear('map');
     if (k.dataset.k === 'menu') openMenu();
     if (k.dataset.k === 'map') openFullMap();
+    if (k.dataset.k === 'quests') openQuestLog();
   }
   const bb = e.target.closest('[data-b]');
   if (bb && mode === 'battle' && !bb.disabled) battleInput(bb.dataset.b, bb.dataset.arg);
@@ -1842,6 +1950,7 @@ function indexObjects() {
   for (const b of FL.benches) objIndex.set(key(b), 'bench');
   for (const b of FL.shops || []) objIndex.set(key(b), 'shop');
   for (const b of FL.beds || []) objIndex.set(key(b), 'bed');
+  for (const g of FL.questGivers || []) objIndex.set(key(g), { qgiver: g });
   for (const b of FL.bosses) if (!G.bossesDead.includes(b.id)) objIndex.set(key(b), b);
   for (const c of FL.chests) if (!G.opened.includes(c.id)) objIndex.set(key(c), c);
   for (const g of FL.gates || []) if (!G.killed.includes(g.keeper)) objIndex.set(key(g), g);
@@ -1872,7 +1981,7 @@ function tryStep(dir) {
     updateBoxPop();
     save();
     if (FL.tutorial) tut('safe');
-    else bookie(G.doc.met || !(FL.doc.x >= 0 && roomAt(FL, nx, ny) === FL.safeRoom) ? 'Safe room. Mobs can\'t come in here. Game saved.' : 'A safe room! Mobs can\'t come in. Your game just saved. Go say hi to the medic.');
+    else bookie(G.doc.met || !(FL.doc.x >= 0 && roomAt(FL, nx, ny) === FL.safeRoom) ? 'Safe room. Mobs can\'t come in here. Game saved.' : 'A safe room! Mobs can\'t come in. Your game just saved. Go say hi to the medic, and talk to anyone with a ! over their head for quests.');
   }
   if (FL.tutorial) {
     const c = FL.chests[0];
@@ -1975,6 +2084,7 @@ function sleepInBed() {
   const s = stats();
   if (G.hp >= s.maxHp && G.mp >= s.maxMp) return say('You lie down for a second. You are not tired. HP and MP are already full.');
   G.hp = s.maxHp; G.mp = s.maxMp;
+  questEvent('sleep');
   say('<span class="good">You nap in the safe room bed. HP and MP fully restored!</span>');
   bookie(R.pick(['A nap on live TV. The Patrons are paying to watch you snore.', 'Rise and shine, crawler. The mobs did not nap.']));
   updateHud(); save();
@@ -1985,6 +2095,7 @@ function interact(obj) {
   if (obj === 'bench') return openBench();
   if (obj === 'shop') return openShop();
   if (obj === 'bed') return sleepInBed();
+  if (obj.qgiver) return openQuestGiver(obj.qgiver);
   if (obj.type && BOSSES[obj.type]) {
     const d = BOSSES[obj.type];
     return ask(`${d.name} blocks your way. ${d.intro}`, [
@@ -2274,6 +2385,7 @@ function learnScroll(id) {
   if (G.moves.includes(mv) || !canLearn(id)) return renderBag();
   G.moves.push(mv);
   removeItem(id);
+  questEvent('learn');
   say(`<span class="good">You learned ${esc(MOVES[mv].name)}!</span> ${esc(MOVES[mv].desc)}`);
   bookie(R.pick(['A new move! The Patrons love a training montage.', 'Studying in a safe room. Responsible. Boring. But responsible.']));
   save();
@@ -2283,6 +2395,10 @@ function learnScroll(id) {
 // Drinking or eating an item.
 function consume(id) {
   const it = ITEMS[id];
+  if (it.heal || it.healPct || it.type === 'food') questEvent('heal');
+  if (it.type === 'food' && it.buff) questEvent('buffFood');
+  if (it.type === 'potion') questEvent('potion');
+  if (it.guide) questEvent('compass');
   if (cooled(id)) G.potionCd = POTION_CD;
   const s = stats();
   removeItem(id);
@@ -2388,6 +2504,7 @@ function openOneBox(id) {
   const bound = boundCount(id) > 0; // bound boxes are opened first
   removeItem(id);
   G.boxesOpened++;
+  questEvent('open');
   const loot = rollLoot(id);
   if (bound) loot.tokens = 0; // a bought box never pays back tokens
   loot.bound = bound;
@@ -2534,7 +2651,7 @@ overlayHandlers.skiptut = () => finishTutorial();
 // ---------- Battle ----------
 function makeEnemy(member, i, depth = 0) {
   const base = MOBS[member.type];
-  const e = { id: i, name: base.name, sprite: base.sprite, atkKey: base.sprite, hp: base.hp, atk: base.atk, def: base.def, spd: base.spd, xp: base.xp, tokens: base.tokens, drops: base.drops, traits: member.traits.slice(), elite: member.elite, alive: true, flash: 0, slash: 0, intent: 'attack', begged: false, poison: 0, frozen: 0 };
+  const e = { id: i, type: member.type, name: base.name, sprite: base.sprite, atkKey: base.sprite, hp: base.hp, atk: base.atk, def: base.def, spd: base.spd, xp: base.xp, tokens: base.tokens, drops: base.drops, traits: member.traits.slice(), elite: member.elite, alive: true, flash: 0, slash: 0, intent: 'attack', begged: false, poison: 0, frozen: 0 };
   if (e.traits.includes('armored')) e.def += 3;
   if (e.elite) { e.hp = Math.round(e.hp * 1.6); e.atk = e.atk * 1.15 + 1; e.xp *= 2; }
   // Danger comes from the floor and how deep into it you are (stage 1 to the bosses), never from your level.
@@ -2869,6 +2986,8 @@ async function doPlayer(action, targetId) {
     if (crit) dmg *= 1.5;
     const pow = movePow(action);
     hitEnemy(target, dmg * pow, crit ? 'Critical! ' : '');
+    const leech = leechShare();
+    if (leech > 0) { const h = Math.max(1, Math.round(Math.max(1, dmg * pow) * leech)); G.hp = Math.min(s.maxHp, G.hp + h); popHero('+' + h, '#6bbf59'); }
     if (action === 'weapon' && G.race === 'werewolf' && target.alive && R.chance(0.2)) { await sleep(200); burst(tb.cx, tb.cy, 'slash', '#c8334a'); hitEnemy(target, (heroAtk() + R.int(0, 2) - def) * pow, 'You lunge again! '); }
     if (G.race === 'goblin' && R.chance(0.25)) { const t = R.int(1, 3); G.tokens += t; say(`You swipe ${t} tokens.`); }
     gainMoveXp(action, { name: action === 'kick' ? 'Kick' : w ? 'Swing' : 'Punch', mp: 0 });
@@ -2878,6 +2997,7 @@ async function doPlayer(action, targetId) {
     const id = action.slice(5);
     const it = ITEMS[id];
     removeItem(id);
+    questEvent('bomb');
     say(`You throw a <b>${esc(it.name)}</b>!`);
     const mid = { x: 160, y: 56 };
     await fly(HERO_C, mid, 'bomb', '#5a5373', 420);
@@ -2947,6 +3067,8 @@ async function castMove(id, e) {
   B.movePow = movePow(id);
   try { await castMoveInner(id, e, s, isClass, def); } finally { B.casting = false; B.movePow = 1; }
   gainMoveXp(id, def);
+  questEvent('cast');
+  if (isClass) questEvent('castClass');
 }
 async function castMoveInner(id, e, s, isClass, def) {
   const eb = e && enemyBox(e);
@@ -3290,6 +3412,7 @@ function victory() {
   for (const e of B.enemies) {
     const ex = e.xp * xpMult * (e.respawn ? 0.5 : 1);
     if (e.spared) { xp += Math.floor(ex / 2); continue; }
+    questEvent('kill', 1, { mob: e.type });
     xp += Math.max(1, Math.round(ex));
     tokens += R.int(e.tokens[0], e.tokens[1]);
     // Drops (cut again for the 10 floor plan: owner had too many leftover items and boxes).
@@ -3297,7 +3420,7 @@ function victory() {
     if (e.drops.length && R.chance(0.45 + scav)) drops.push(R.pick(e.drops));
     if (R.chance(0.05 + scav)) { const bonus = rollLoot(deep ? 'box_silver' : 'box_rusty').items[0]; if (bonus) for (let n = 0; n < bonus[1]; n++) drops.push(bonus[0]); }
     if (R.chance(0.03 + scav / 2)) drops.push(deep && R.chance(0.3) ? 'box_silver' : 'box_rusty');
-    if (R.chance(0.35 + scav)) drops.push(R.pick(['j_wire', 'j_token', 'j_feather', 'j_jelly', 'j_tail', 'j_scrap']));
+    if (R.chance(0.35 + scav)) drops.push(R.pick(['j_wire', 'j_token', 'j_feather', 'j_jelly', 'j_tail', 'j_scrap', 'j_dust']));
     if (e.elite) { drops.push(deep ? 'box_gold' : 'box_silver', rollLoot(deep ? 'box_gold' : 'box_silver').items[0][0]); achieve('elite'); tag('brave'); }
   }
   const boss = B.enemies.find((e) => e.boss);
@@ -3328,6 +3451,8 @@ function victory() {
   const merged = {};
   for (const d of drops) merged[d] = (merged[d] || 0) + 1;
   for (const [d, n] of Object.entries(merged)) addItem(d, n);
+  const mats = Object.entries(merged).filter(([d]) => ITEMS[d].type === 'junk' && d !== 'j_scrap').reduce((a, [, n]) => a + n, 0);
+  if (mats) questEvent('mat', mats);
   for (const id of B.stolen) { addItem(id, 1, true); say(`You got your ${esc(ITEMS[id].name)} back.`); }
   gainXp(xp);
   if (B.mob) {
@@ -3449,6 +3574,260 @@ function goDownstairs() {
   save();
 }
 
+// ---------- Quests ----------
+// People in the safe rooms hand out quests that teach the game (data in quests.js).
+// G.q = { a: { questId: count }, d: [done ids], ann: { questId: true once "complete" was announced } }.
+// Count quests only count after you accept them. Check quests (level, gear...) are done once true.
+function questState() {
+  if (!G.q) G.q = { a: {}, d: [], ann: {} };
+  G.q.a = G.q.a || {}; G.q.d = G.q.d || []; G.q.ann = G.q.ann || {};
+  return G.q;
+}
+function questStat(q) {
+  switch (q.st) {
+    case 'level': return G.lvl;
+    case 'weaponLvl': return moveLvl('weapon');
+    case 'classLvl': return moveLvl('class');
+    case 'worn': return GEAR_SLOTS.filter((sl) => G.equip[sl]).length;
+    case 'upg': return Math.max(0, ...Object.entries(G.upg || {}).filter(([id]) => count(id) > 0).map(([, l]) => l));
+    case 'moves': return G.moves.length;
+    case 'enchWorn': return wornEnchants().length;
+    case 'spellLvl': return Math.max(0, ...G.moves.map((m) => moveLvl(m)));
+    // Bosses: beaten if you are past that floor, or it is down on this floor.
+    case 'boss': return G.floor > q.floor || (G.floor === q.floor && G.bossesDead.includes(q.boss)) ? 1 : 0;
+    default: return 0;
+  }
+}
+function questProg(q) { return Math.min(q.n, q.st ? questStat(q) : (questState().a[q.id] || 0)); }
+function questActive(q) { return q.id in questState().a; }
+function questReady(q) { return questActive(q) && questProg(q) >= q.n; }
+function questDoneIds() { return questState().d; }
+function activeQuests() { return Object.keys(questState().a).map((id) => QUEST_BY_ID[id]).filter(Boolean); }
+function readyQuests() { return activeQuests().filter(questReady); }
+function floorQuests() { return QUESTS[G.floor] || []; }
+// A giver in stage s offers their own chapter plus any earlier chapter you skipped.
+function offeredBy(stage) {
+  const st = questState();
+  return floorQuests().filter((q) => q.ch <= stage + 1 && !(q.id in st.a) && !st.d.includes(q.id));
+}
+function questGiverOf(q) { return (QUEST_NPCS[q.floor] || [])[q.ch - 1]; }
+
+// What a quest pays. XP is a share of a level at the level this chapter expects, so it stays useful
+// without racing you ahead. From Floor 2 on (owner): more XP, more tokens and a loot box with every quest.
+function questReward(q) {
+  const f = floorDef(q.floor), boss = q.st === 'boss';
+  const lvlAt = Math.round(f.lvl[0] + (f.lvl[1] - f.lvl[0]) * (q.ch - 1) / 4);
+  const deep = q.floor >= 2;
+  const xp = Math.max(5, Math.round(xpNeed(lvlAt) * (boss ? 0.25 : deep ? 0.07 : 0.1)));
+  const fs = floorSize(q.floor);
+  const tokens = Math.round((boss ? (deep ? 80 : 40) : deep ? 10 + 6 * q.ch : 6 + 4 * q.ch) * fs);
+  const items = (q.items || []).map(([id, n]) => [isGear(id) && q.floor >= 2 ? `${baseId(id)}@${q.floor}` : id, n]);
+  if (deep && !boss) items.push(['box_silver', 1]);
+  return { xp, tokens, items };
+}
+function rewardText(rw) {
+  return [`+${rw.xp} XP`, `+${rw.tokens} tokens`, ...rw.items.map(([id, n]) => `${ITEMS[id].name}${n > 1 ? ' x' + n : ''}`)].join(', ');
+}
+
+// Something happened that a quest might count (kills, crafting, boxes...).
+function questEvent(ev, n = 1, info = {}) {
+  if (!G || !G.q) return;
+  const st = G.q;
+  for (const q of activeQuests()) {
+    if (q.ev !== ev || (q.mob && q.mob !== info.mob) || (q.ctype && q.ctype !== info.ctype)) continue;
+    const before = st.a[q.id] || 0;
+    if (before >= q.n) continue;
+    st.a[q.id] = Math.min(q.n, before + n);
+    if (st.a[q.id] < q.n) say(`<span class="quest">Quest: ${esc(q.name)} ${st.a[q.id]}/${q.n}</span>`);
+  }
+  questCheck();
+}
+// Announce quests that just became ready to turn in (once each).
+function questCheck() {
+  if (!G || !G.q) return;
+  let changed = false;
+  for (const q of activeQuests()) {
+    if (G.q.ann[q.id] || !questReady(q)) continue;
+    G.q.ann[q.id] = true;
+    changed = true;
+    say(`<span class="quest"><b>Quest complete: ${esc(q.name)}!</b></span> Turn it in with any quest giver in a safe room.`);
+  }
+  if (changed && mode === 'map' && !prompt && overlay.hidden) renderControls();
+}
+
+function acceptQuest(q) {
+  const st = questState();
+  if (q.id in st.a || st.d.includes(q.id)) return;
+  st.a[q.id] = 0;
+  delete st.ann[q.id];
+}
+function turnInQuest(q) {
+  const st = questState();
+  if (!questReady(q)) return null;
+  delete st.a[q.id]; delete st.ann[q.id];
+  st.d.push(q.id);
+  const rw = questReward(q);
+  G.tokens += rw.tokens;
+  for (const [id, n] of rw.items) addItem(id, n, true);
+  say(`<span class="quest"><b>Turned in: ${esc(q.name)}.</b></span> ${esc(rewardText(rw))}`);
+  gainXp(rw.xp);
+  addHype(q.st === 'boss' ? 2 : 0.5);
+  // Chapter and floor achievements (more boxes).
+  const list = QUESTS[q.floor];
+  if (list.filter((x) => x.ch === q.ch).every((x) => st.d.includes(x.id))) achieve(`quests${q.floor}_${q.ch}`);
+  if (list.every((x) => st.d.includes(x.id))) achieve(`quests${q.floor}_all`);
+  updateHud();
+  return rw;
+}
+function dropQuest(q) { const st = questState(); delete st.a[q.id]; delete st.ann[q.id]; }
+
+// The mark over a quest giver's head: gold ? = something to turn in, gold ! = new quests,
+// grey ? = their quests are still in progress.
+function giverMark(g) {
+  if (!G || !G.q) return '';
+  if (readyQuests().length) return 'turnin';
+  if (offeredBy(g.stage).length) return 'new';
+  if (activeQuests().some((q) => q.floor === G.floor && q.ch === g.stage + 1)) return 'busy';
+  return '';
+}
+const GLYPH = { '!': ['.#.', '.#.', '.#.', '...', '.#.'], '?': ['##.', '..#', '.#.', '...', '.#.'] };
+function drawMark(x, y, ch, color) {
+  const rows = GLYPH[ch];
+  ctx.fillStyle = '#1a1426';
+  ctx.fillRect(x - 1, y - 1, 8, 12);
+  ctx.fillStyle = color;
+  rows.forEach((row, ry) => [...row].forEach((c, rx) => { if (c === '#') ctx.fillRect(x + rx * 2, y + ry * 2, 2, 2); }));
+}
+function drawQuestGivers(camX, camY, onScreen, bob) {
+  for (const g of FL.questGivers || []) {
+    if (!onScreen(g) || !seen(g.x, g.y)) continue;
+    const npc = QUEST_NPCS[G.floor] && QUEST_NPCS[G.floor][g.stage];
+    if (!npc) continue;
+    const gx = Math.round(g.x * 16 - camX), gy = Math.round(g.y * 16 - camY);
+    if (g.board) ctx.drawImage(sprite('board'), gx, gy);
+    else { shadow(gx, gy); ctx.drawImage(npcSprite(npc.name, npc.colors), gx, gy); }
+  }
+}
+// Drawn after the characters so the hero never hides the ! or ?.
+function drawQuestMarks(camX, camY, onScreen, bob) {
+  for (const g of FL.questGivers || []) {
+    if (!onScreen(g) || !seen(g.x, g.y)) continue;
+    const m = giverMark(g);
+    if (m) drawMark(Math.round(g.x * 16 - camX) + 5, Math.round(g.y * 16 - camY) - 12 + bob, m === 'new' ? '!' : '?', m === 'busy' ? '#8b84a3' : '#f5c542');
+  }
+}
+
+// ----- Talking to a quest giver (or their job board) -----
+let qTalk = null; // { g, note }
+function openQuestGiver(g) {
+  moveHeld = null;
+  qTalk = { g, note: '' };
+  renderQuestGiver();
+}
+function questRowHtml(q, btn) {
+  const rw = questReward(q);
+  const giver = questGiverOf(q);
+  return `<div class="item quest-row"><img src="${q.st === 'boss' ? icon('box_gold') : npcSprite(giver.name, giver.colors).toDataURL()}" alt="">
+    <div class="txt"><span class="nm">${esc(q.name)}${q.floor !== G.floor ? ` <span class="muted">(Floor ${q.floor})</span>` : ''}</span>
+    ${btn === 'accept' ? `<span class="ds">"${esc(q.talk)}"</span>` : ''}
+    <span class="need"><span class="${questProg(q) >= q.n ? 'ok' : ''}">${esc(q.goal)}${btn === 'accept' ? '' : ` · ${questProg(q)}/${q.n}`}</span></span>
+    <span class="ds"><b style="color:var(--gold)">Reward:</b> ${esc(rewardText(rw))}</span></div>
+    ${btn === 'accept' ? `<button class="act green" data-act="qaccept" data-id="${q.id}">Accept</button>` : btn === 'turnin' ? `<button class="act gold" data-act="qturn" data-id="${q.id}">Turn in</button>` : ''}</div>`;
+}
+function renderQuestGiver() {
+  const g = qTalk.g;
+  const npc = QUEST_NPCS[G.floor][g.stage];
+  const ready = readyQuests();
+  const offer = offeredBy(g.stage);
+  const mine = activeQuests().filter((q) => !questReady(q) && q.floor === G.floor && q.ch === g.stage + 1);
+  const line = ready.length ? 'Nice work. Let\'s settle up.' : offer.length ? npc.hi : mine.length ? 'Still working on it? Check your Quests list for tips.' : npc.bye;
+  const face = g.board ? sprite('board') : npcSprite(npc.name, npc.colors);
+  showOverlay(`
+    <div class="row-between"><h2>${g.board ? 'JOB BOARD' : esc(npc.name).toUpperCase()}</h2><span class="muted" style="font-size:14px">Floor ${G.floor} quests ${floorQuests().filter((q) => questDoneIds().includes(q.id)).length}/${floorQuests().length}</span></div>
+    <div class="bookie quest-npc"><img src="${face.toDataURL()}" alt=""><p><b style="color:var(--gold)">${g.board ? `${esc(npc.name)}'s notes` : `${esc(npc.name)}, ${esc(npc.title)}`}:</b> ${esc(line)}</p></div>
+    ${qTalk.note}
+    ${ready.length ? `<div class="item-group">Ready to turn in</div><div class="items">${ready.map((q) => questRowHtml(q, 'turnin')).join('')}</div>` : ''}
+    ${offer.length ? `<div class="item-group">New quests</div>${offer.length > 1 ? `<button class="btn green" data-act="qacceptall">ACCEPT ALL ${offer.length}</button>` : ''}<div class="items">${offer.map((q) => questRowHtml(q, 'accept')).join('')}</div>` : ''}
+    ${mine.length ? `<div class="item-group">In progress</div><div class="items">${mine.map((q) => questRowHtml(q, '')).join('')}</div>` : ''}
+    ${!ready.length && !offer.length && !mine.length ? `<p class="muted">Nothing new right now. ${g.stage < 3 ? 'More quests wait in the next stage\'s safe room.' : 'Go finish those bosses.'}</p>` : ''}
+    <button class="btn grey" data-act="qclose" style="position:sticky; bottom:0">LEAVE</button>`);
+}
+
+// ----- The quest log (Quests button) -----
+function openQuestLog() {
+  if (!canAct()) return;
+  moveHeld = null;
+  renderQuestLog();
+}
+function renderQuestLog(extra = '') {
+  const st = questState();
+  const act = activeQuests();
+  const ready = act.filter(questReady);
+  const going = act.filter((q) => !questReady(q));
+  const fq = floorQuests();
+  const npcs = QUEST_NPCS[G.floor] || [];
+  const chapters = npcs.map((n, i) => {
+    const list = fq.filter((q) => q.ch === i + 1);
+    const done = list.filter((q) => st.d.includes(q.id)).length;
+    const fresh = list.filter((q) => !(q.id in st.a) && !st.d.includes(q.id)).length;
+    return `<div class="item"><img src="${npcSprite(n.name, n.colors).toDataURL()}" alt=""><div class="txt"><span class="nm">${esc(n.name)} <span class="muted" style="font-weight:400">${esc(n.title)}</span></span>
+      <span class="ds">Stage ${i + 1} safe room · ${done}/${list.length} done${fresh ? ` · <b style="color:var(--gold)">${fresh} new</b>` : ''}</span></div></div>`;
+  }).join('');
+  const goingRow = (q) => `<div class="item quest-row"><div class="txt"><span class="nm">${esc(q.name)}${q.floor !== G.floor ? ` <span class="muted">(Floor ${q.floor})</span>` : ''}</span>
+      <span class="need">${esc(q.goal)} · <b>${questProg(q)}/${q.n}</b></span>
+      <div class="qbar"><div style="width:${Math.round(100 * questProg(q) / q.n)}%"></div></div>
+      <span class="ds">${esc(q.tip)}</span>
+      <span class="ds">From ${esc(questGiverOf(q).name)} · Reward: ${esc(rewardText(questReward(q)))}</span></div>
+      <button class="act grey" data-act="qdrop" data-id="${q.id}">Drop</button></div>`;
+  showOverlay(`
+    <div class="row-between"><h2>QUESTS</h2><span class="muted" style="font-size:14px">Floor ${G.floor}: ${fq.filter((q) => st.d.includes(q.id)).length}/${fq.length} done</span></div>
+    ${extra}
+    ${FL.tutorial || !fq.length ? '<p class="muted">No quests here.</p>' : ''}
+    ${ready.length ? `<div class="item-group">Ready to turn in</div><p class="muted" style="font-size:14px;margin:0">Turn these in with any quest giver or job board in a safe room.</p><div class="items">${ready.map((q) => questRowHtml(q, '')).join('')}</div>` : ''}
+    ${going.length ? `<div class="item-group">In progress</div><div class="items">${going.map(goingRow).join('')}</div>` : `<p class="muted">${ready.length ? '' : 'No quests in progress. Look for a gold ! over someone in a safe room.'}</p>`}
+    ${chapters ? `<div class="item-group">Quest givers on this floor</div><div class="items">${chapters}</div>` : ''}
+    <button class="btn grey" data-act="qlogclose" style="position:sticky; bottom:0">CLOSE</button>`);
+}
+
+Object.assign(overlayHandlers, {
+  qaccept: (_, b) => {
+    const q = QUEST_BY_ID[b.dataset.id];
+    if (!q) return;
+    acceptQuest(q);
+    qTalk.note = `<p class="note good">Accepted: ${esc(q.name)}. ${esc(q.tip)}</p>`;
+    questCheck();
+    save();
+    renderQuestGiver();
+  },
+  qacceptall: () => {
+    const list = offeredBy(qTalk.g.stage);
+    list.forEach(acceptQuest);
+    qTalk.note = `<p class="note good">Accepted ${list.length} quests. Tap Quests at the bottom of the map for tips.</p>`;
+    questCheck();
+    save();
+    renderQuestGiver();
+  },
+  qturn: (_, b) => {
+    const q = QUEST_BY_ID[b.dataset.id];
+    const rw = q && turnInQuest(q);
+    if (!rw) return;
+    bookie(R.pick(['Quest complete! The Patrons love a crawler with a to-do list.', 'Another job done. Somebody up there just won a side bet.', 'Errands on a death show. Riveting. Also, profitable.']));
+    qTalk.note = `<div class="reveal"><p class="banner gold" style="font-size:16px">QUEST COMPLETE!</p>${lootRows(rw.items)}
+      <div class="item"><div class="txt"><span class="nm" style="color:var(--gold)">+${rw.xp} XP · +${rw.tokens} tokens</span></div></div></div>`;
+    save();
+    renderQuestGiver();
+  },
+  qclose: () => { qTalk = null; save(); hideOverlay(); renderControls(); },
+  qdrop: (_, b) => {
+    const q = QUEST_BY_ID[b.dataset.id];
+    if (!q) return;
+    dropQuest(q);
+    save();
+    renderQuestLog(`<p class="note">Dropped ${esc(q.name)}.${q.floor === G.floor ? ` You can pick it up again from ${esc(questGiverOf(q).name)}.` : ''}</p>`);
+  },
+  qlogclose: () => { hideOverlay(); renderControls(); },
+});
+
 // ---------- Drawing ----------
 // Each floor has its own colors (FLOORS[n].colors in data.js).
 function TILE_C() { return (G && G.floor >= 1 ? fd() : FLOORS[1]).colors; }
@@ -3524,6 +3903,7 @@ function drawMap() {
     ctx.fillStyle = '#6aa0d8'; ctx.fillRect(bx + 3, by + 8, 10, 1);
   }
   if (onScreen(FL.doc) && seen(FL.doc.x, FL.doc.y)) draw(docSprite(), FL.doc.x * 16, FL.doc.y * 16);
+  drawQuestGivers(camX, camY, onScreen, bob);
   for (const g of FL.gates || []) if (onScreen(g) && seen(g.x, g.y) && !G.killed.includes(g.keeper)) {
     const gx = g.x * 16 - camX, gy = g.y * 16 - camY;
     ctx.fillStyle = '#1a1426'; ctx.fillRect(gx, gy, 16, 16);
@@ -3554,6 +3934,7 @@ function drawMap() {
   }
   actors.push({ y: heroDraw.y, fn: () => { shadow(heroDraw.x - camX, heroDraw.y - camY); draw(heroSprite(race(), cls(), face, heroFrame, G.sex), heroDraw.x, heroDraw.y, heroFrame ? -1 : 0); } });
   actors.sort((a, b) => a.y - b.y).forEach((a) => a.fn());
+  drawQuestMarks(camX, camY, onScreen, bob);
   drawMiniMap();
 }
 
@@ -3883,4 +4264,4 @@ Object.assign(overlayHandlers, {
 flushStats();
 
 // Test hook for automated playtests only: open the game with ?debug to reach these from the browser console.
-if (location.search.includes('debug')) window.__LO = { G: () => G, FL: () => FL, B: () => B, startBattle, startBossBattle, doPlayer, stats, shopStock, priceOf, upgCost, canUpgrade, gearStats, save, makeEnemy, newGame, goDownstairs, gainXp, consume, enemyTurn, victory, shiftOdds, minOdds, loadSlot, addHype, openShop };
+if (location.search.includes('debug')) window.__LO = { G: () => G, FL: () => FL, B: () => B, startBattle, startBossBattle, doPlayer, stats, shopStock, priceOf, upgCost, canUpgrade, gearStats, save, makeEnemy, newGame, goDownstairs, gainXp, consume, enemyTurn, victory, shiftOdds, minOdds, loadSlot, addHype, openShop, openQuestGiver, openQuestLog, questEvent, openBench, renderBench, setBenchTab: (t) => { benchTab = t; }, enterMap, interact, tryStep, renderQuestGiver };
