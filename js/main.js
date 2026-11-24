@@ -1,7 +1,7 @@
 // Long Odds prototype. Game state, map, battles, bag, safe room and screens.
 import { R, makeRng, newSeed } from './rng.js?v=__BUILD_VERSION__';
 import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, GEAR_TYPES, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, FLOORS, LAST_FLOOR, CLASS_SWAP_FLOORS, MINIONS, floorDef, floorSize, baseId, RECIPES, SCHOOL_NAMES } from './data.js?v=__BUILD_VERSION__';
-import { generateFloor, tutorialFloor, roomAt, makeGroup, walkable, tileAt, stageAt, T, key } from './dungeon.js?v=__BUILD_VERSION__';
+import { generateFloor, tutorialFloor, roomAt, makeGroup, isEasyStart, walkable, tileAt, stageAt, T, key } from './dungeon.js?v=__BUILD_VERSION__';
 import { sprite, heroSprite, flipped, docSprite, boxSprite, mobSprite, itemIcon, slotIcon } from './sprites.js?v=__BUILD_VERSION__';
 import { SLOT_COUNT, readSlot, writeSlot, deleteSlot, listSlots, exportCode, importCode } from './save.js?v=__BUILD_VERSION__';
 import { VERSION, checkForUpdate, installUpdate } from './version.js?v=__BUILD_VERSION__';
@@ -1928,10 +1928,13 @@ function respawnMobs() {
   let made = 0;
   for (let tries = 0; tries < 20 && made < 3 && rooms.length; tries++) {
     const r = R.pick(rooms);
+    const easy = isEasyStart(FL.floor, r);
+    // Floor 1 stage 1 refills at half the rate, one small group at a time.
+    if (easy && (made > 0 || R.chance(0.5))) continue;
     const p = { x: R.int(r.x, r.x + r.w - 1), y: R.int(r.y, r.y + r.h - 1) };
     if (tileAt(FL, p.x, p.y) !== T.FLOOR || objectAt(p.x, p.y) || mobAt(p.x, p.y)) continue;
     const depth = r.depth != null ? r.depth : Math.min(1, (FL.dist ? FL.dist[r.cy * FL.w + r.cx] : 0) / FL.far);
-    const grp = makeGroup(R, FL.mobTypes || fd().mobs, Object.keys(TRAITS), Math.max(0, depth), R.chance(0.04));
+    const grp = makeGroup(R, FL.mobTypes || fd().mobs, Object.keys(TRAITS), Math.max(0, depth), !easy && R.chance(0.04), easy);
     mobsLive.push({ id: 'r' + (G.spawnCount++), x: p.x, y: p.y, stun: 0, depth, respawn: true, ...grp });
     made++;
   }
@@ -2511,6 +2514,8 @@ function makeEnemy(member, i, depth = 0) {
   // So leveling up makes you stronger for real. Numbers per floor live in FLOORS (data.js).
   const f = fd(), lerp = ([a, b]) => a + (b - a) * Math.max(0, Math.min(1, depth));
   e.hp = Math.round(e.hp * lerp(f.hp)); e.atk = Math.round(e.atk * lerp(f.atk));
+  // Floor 1 stage 1 mobs are softer: 25% less HP and attack at the very start, back to normal by the first gate.
+  if (G.floor === 1 && depth < 0.25) { const k = 0.75 + depth; e.hp = Math.max(1, Math.round(e.hp * k)); e.atk = Math.max(1, Math.round(e.atk * k)); }
   e.def = Math.round(e.def * fsize());
   e.xp = Math.round(e.xp * (1 + depth) * fsize());
   e.tokens = [Math.round(e.tokens[0] * fsize()), Math.round(e.tokens[1] * fsize())];
