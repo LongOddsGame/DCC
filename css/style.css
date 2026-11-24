@@ -21,7 +21,8 @@ button:disabled { opacity: 0.45; cursor: default; }
 .hud-row { display: flex; align-items: center; gap: 6px; }
 .hud-top { justify-content: space-between; font-family: var(--pixel); font-size: 10px; }
 #hud-floor { color: var(--gold); }
-#hud-odds { color: var(--pink); }
+#hud-odds { color: var(--pink); white-space: nowrap; flex-shrink: 0; }
+#hud-timer { white-space: nowrap; flex-shrink: 0; }
 #hud-timer.warn { color: var(--red); animation: blink 1s steps(2) infinite; }
 .bar-label { font-size: 13px; width: 20px; }
 .bar { flex: 1; height: 10px; background: var(--edge2); border: 2px solid var(--ink); }
