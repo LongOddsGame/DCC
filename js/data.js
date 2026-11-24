@@ -311,7 +311,8 @@ export const LOOT = {
   box_gold: [['potion_big', 4, 1, 2], ['bomb_big', 3, 1, 2], ['w_mic', 2, 1, 1], ['a_suit', 2, 1, 1], ['box_silver', 2, 1, 1], ['potion_mana', 2, 1, 2], ['potion_mana_big', 2, 1, 2], ['scroll_fireball', 2, 1, 1], ['scroll_frost', 1, 1, 1], ['potion_radar', 1, 2, 2], ['h_tiara', 1, 1, 1], ['s_jersey', 1, 1, 1], ['r_cuffs', 1, 1, 1], ['f_boots', 1, 1, 1], ['s_flannel', 1, 1, 1], ['n_chain', 1, 1, 1], ['g_ruby', 1, 1, 1], ['l_cargo', 1, 1, 1], ['k_cape', 1, 1, 1]],
   box_patron: [['w_bat', 2, 1, 1], ['a_coat', 2, 1, 1], ['potion_big', 3, 2, 3], ['potion_mana_big', 3, 1, 2], ['bomb_big', 3, 1, 2], ['box_gold', 1, 1, 1], ['potion_mystery', 2, 3, 4], ['scroll_lightning', 2, 1, 1], ['scroll_fireball', 1, 1, 1], ['h_crown', 1, 1, 1], ['s_silk', 1, 1, 1], ['r_bangle', 1, 1, 1], ['f_loafers', 1, 1, 1], ['n_pendant', 1, 1, 1], ['g_band', 1, 1, 1], ['l_tux', 1, 1, 1], ['k_mink', 1, 1, 1]],
 };
-export const BOX_TOKENS = { box_rusty: [3, 8], box_silver: [8, 16], box_gold: [18, 30], box_patron: [25, 50] };
+// Halved for Floor 3 (owner banked 13,751 tokens by the end of Floor 2).
+export const BOX_TOKENS = { box_rusty: [1, 4], box_silver: [4, 8], box_gold: [9, 15], box_patron: [12, 25] };
 
 // Each potion type rolls one of these per save. You learn it the first time you drink one.
 export const SIDE_EFFECTS = [
@@ -339,17 +340,29 @@ export const MOBS = {
   meatball: { name: 'Rolling Meatball', sprite: 'meatball', hp: 19, atk: 6, def: 3, spd: 2, xp: 9, tokens: [2, 5], drops: ['j_scrap', 'food_mystery'] },
   busboy: { name: 'Zombie Busboy', sprite: 'busboy', hp: 16, atk: 6, def: 2, spd: 4, xp: 8, tokens: [2, 6], healer: true, drops: ['j_token', 'j_wire', 'food_taco'] },
   pizza: { name: 'Cold Pizza Slice', sprite: 'pizza', hp: 12, atk: 5, def: 1, spd: 5, xp: 6, tokens: [1, 4], poison: 0.25, drops: ['j_tail', 'food_smoothie'] },
+  // Floor 3: The Parking Garage. rally: may blare an alarm that makes every friend hit harder.
+  // bleed: chance to make you bleed on hit. fine: chance to take tokens on hit (you get half back if you win).
+  // steal: chance to swipe an item (you get it back if you win).
+  cone: { name: 'Traffic Cone Brute', sprite: 'cone', hp: 22, atk: 6, def: 5, spd: 2, xp: 10, tokens: [1, 4], drops: ['j_scrap', 'j_wire'] },
+  alarm: { name: 'Car Alarm Banshee', sprite: 'alarm', hp: 12, atk: 5, def: 1, spd: 8, xp: 8, tokens: [1, 3], rally: true, drops: ['j_wire', 'food_espresso'] },
+  tire: { name: 'Tire Shredder', sprite: 'tire', hp: 15, atk: 7, def: 2, spd: 7, xp: 8, tokens: [1, 3], bleed: 0.3, drops: ['j_scrap', 'j_tail'] },
+  meter: { name: 'Parking Meter Mimic', sprite: 'meter', hp: 18, atk: 6, def: 4, spd: 3, xp: 9, tokens: [2, 5], fine: 0.4, drops: ['j_token', 'j_wire'] },
+  valet: { name: 'Valet Ghoul', sprite: 'valet', hp: 16, atk: 7, def: 2, spd: 6, xp: 9, tokens: [1, 4], steal: 0.3, drops: ['j_token', 'food_taco'] },
 };
 export const BOSSES = {
   // Boss stats are set for their floor and do not grow with your level (see FLOORS).
   king: { name: 'The Turnstile King', sprite: 'king', hp: 230, atk: 19, def: 5, spd: 4, xp: 120, tokens: [30, 45], drop: 'w_bar', special: 'Fare Check', angry: 'FARE INCREASE! The King is angry now.', intro: '"No ticket? No exit. No mercy."', announce: 'Ladies, gentlemen and billionaires: THE TURNSTILE KING!' },
   hoarder: { name: 'The Lost and Found Hoarder', sprite: 'hoarder', hp: 210, atk: 17, def: 6, spd: 5, xp: 110, tokens: [25, 40], drop: 'scroll_fireball', special: 'Grabby Hands', angry: 'The Hoarder is getting desperate. Hold onto your stuff!', intro: '"Finders keepers. Losers... also mine."', announce: 'From the depths of the lost property office: THE HOARDER!' },
   frycook: { name: 'The Fry Cook Tyrant', sprite: 'frycook', hp: 300, atk: 25, def: 7, spd: 5, xp: 230, tokens: [45, 65], drop: 'w_mic', special: 'Grease Fire', angry: 'The fryer is boiling over! The Tyrant is furious!', intro: '"Order up! You\'re the order."', announce: 'Straight from the grill of doom: THE FRY COOK TYRANT!' },
+  towtruck: { name: 'The Tow Truck Titan', sprite: 'towtruck', hp: 470, atk: 34, def: 10, spd: 4, xp: 380, tokens: [50, 70], drop: 'f_boots', special: 'Hook and Drag', angry: 'The engine roars! The Titan is moving twice as fast!', intro: '"You\'re parked in a tow zone. Forever."', announce: 'Eighteen wheels of bad news: THE TOW TRUCK TITAN!' },
+  metermaid: { name: 'The Meter Maid', sprite: 'metermaid', hp: 430, atk: 32, def: 9, spd: 6, xp: 380, tokens: [50, 70], drop: 'r_cuffs', special: 'Boot Clamp', angry: 'She calls for backup! Ticket Drones incoming!', intro: '"Your time has expired. So have you."', announce: 'She has never once accepted an excuse: THE METER MAID!' },
   buffet: { name: 'The Buffet Blob', sprite: 'buffet', hp: 320, atk: 24, def: 6, spd: 3, xp: 230, tokens: [45, 65], drop: 'a_suit', special: 'Second Helping', angry: 'The Blob is splitting! Leftovers incoming!', intro: '"All you can eat. And I can eat YOU."', announce: 'It ate the salad bar. It ate the sneeze guard. THE BUFFET BLOB!' },
 };
 // Small blobs the Buffet Blob splits off. Their stats are set for Floor 2.
 export const MINIONS = {
   leftover: { name: 'Leftover Blob', sprite: 'slime', atkKey: 'slime', hp: 35, atk: 12, def: 3, spd: 3, xp: 20, tokens: [3, 6] },
+  // The Meter Maid calls two of these in when she gets angry. Set for Floor 3.
+  drone: { name: 'Ticket Drone', sprite: 'drone', atkKey: 'drone', hp: 55, atk: 17, def: 5, spd: 8, xp: 30, tokens: [3, 6] },
 };
 
 // What each mob throws at you. proj is the shape drawn flying across the battle screen.
@@ -371,6 +384,14 @@ export const ATTACKS = {
   pizza: { name: 'Cheese String', heavy: 'Crust Slap', proj: 'bone', color: '#f5c542' },
   frycook: { name: 'Spatula Smack', heavy: 'Deep Fryer Dunk', proj: 'bar', color: '#f5c542' },
   buffet: { name: 'Gravy Wave', heavy: 'Belly Flop', proj: 'blob', color: '#b8e05a' },
+  cone: { name: 'Cone Bonk', heavy: 'Pylon Pile Driver', proj: 'bar', color: '#b8693a' },
+  alarm: { name: 'Shriek', heavy: 'Wailing Siren', proj: 'blob', color: '#ff5fa2' },
+  tire: { name: 'Spike Spin', heavy: 'Blowout', proj: 'junk', color: '#8b84a3' },
+  meter: { name: 'Coin Spit', heavy: 'Expired Meter Slam', proj: 'tickets', color: '#f5c542' },
+  valet: { name: 'Key Fob Fling', heavy: 'Reckless Reverse', proj: 'bar', color: '#c8334a' },
+  towtruck: { name: 'Chain Whip', heavy: 'Bumper Ram', proj: 'bar', color: '#8b84a3' },
+  metermaid: { name: 'Ticket Toss', heavy: 'Citation Storm', proj: 'tickets', color: '#4fd8e8' },
+  drone: { name: 'Fine Print Laser', heavy: 'Late Fee Beam', proj: 'tickets', color: '#c8334a' },
 };
 
 // Moves you can learn from scrolls, on top of your class skill.
@@ -400,6 +421,8 @@ export const FLOOR_RULES = [
   { id: 'hypefest', name: 'Hype Fest', text: 'The audience is hyped. Hype builds twice as fast.' },
   { id: 'happyhour', name: 'Happy Hour', text: 'Penny is running a special. Everything in her shop is 25% off.' },
   { id: 'allyoucaneat', name: 'All You Can Eat', text: 'Food heals twice as much on this floor. Dig in.' },
+  { id: 'rushhour', name: 'Rush Hour', text: 'Everything down here is in a hurry. Mobs sometimes act twice, but give 25% more XP.' },
+  { id: 'nofreeparking', name: 'No Free Parking', text: 'Every mob carries a ticket book. Any hit might cost you tokens.' },
 ];
 
 // ---------- Floors ----------
@@ -418,8 +441,13 @@ export const FLOORS = {
     mobs: ['nugget', 'fizz', 'meatball', 'busboy', 'pizza', 'rat', 'pigeon', 'trashcan'], bosses: ['frycook', 'buffet'],
     rules: ['doubleloot', 'hypefest', 'happyhour', 'allyoucaneat'], shop: ['food_taco', 'food_smoothie', 'food_espresso'], healers: true,
     colors: { floor: ['#e8dcc0', '#c9c3da', '#b7aecb'], wall: ['#7a1c2e', '#c8334a', '#5a1422', '#3e0e18'], safe: ['#3a6ea5', '#4477b0', '#6aa0d8'] } },
+  // Floor 3 is a real step up: mobs blare alarms to rally each other, shred you (bleed), fine you and steal.
+  3: { name: 'The Parking Garage', hp: [6.0, 9.0], atk: [4.8, 6.0], defK: 24, lvl: [9, 13], upgCap: 4,
+    mobs: ['cone', 'alarm', 'tire', 'meter', 'valet', 'roach', 'rat', 'trashcan'], bosses: ['towtruck', 'metermaid'],
+    rules: ['rushhour', 'nofreeparking', 'hypefest', 'happyhour'], shop: ['food_taco', 'food_smoothie', 'food_espresso'], rally: true,
+    colors: { floor: ['#6b6b76', '#75757f', '#5f5f69'], wall: ['#3a3a44', '#b8862b', '#2b2b33', '#1e1e25'], safe: ['#2f7a3c', '#3a8a48', '#6bbf59'] } },
 };
-export const LAST_FLOOR = 2; // the deepest floor built so far
+export const LAST_FLOOR = 3; // the deepest floor built so far
 // Gear, shop prices, tokens and bombs grow 40% per floor.
 export function floorSize(n) { return 1 + 0.4 * (Math.max(1, n) - 1); }
 export function floorDef(n) { return FLOORS[Math.max(1, Math.min(LAST_FLOOR, n || 1))]; }
@@ -436,6 +464,9 @@ export const ACHIEVEMENTS = {
   frycook: { name: 'Kitchen Closed', text: 'You shut down the Fry Cook Tyrant.', reward: 'box_gold' },
   buffet: { name: 'Clean Plate', text: 'You finished the Buffet Blob. All of it.', reward: 'box_gold' },
   floor2: { name: 'Going Down', text: 'You took the stairs to Floor 2.', reward: 'box_silver' },
+  towtruck: { name: 'Repo Man', text: 'You scrapped the Tow Truck Titan.', reward: 'box_gold' },
+  metermaid: { name: 'Fight the Fine', text: 'You tore up the Meter Maid\'s last ticket.', reward: 'box_gold' },
+  floor3: { name: 'Lower Level', text: 'You took the stairs to Floor 3.', reward: 'box_silver' },
 };
 
 export const BOOKIE = {
