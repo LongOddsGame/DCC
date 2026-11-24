@@ -3,6 +3,7 @@ import { R, makeRng, newSeed } from './rng.js?v=__BUILD_VERSION__';
 import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, GEAR_TYPES, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, FLOORS, LAST_FLOOR, CLASS_SWAP_FLOORS, MINIONS, floorDef, floorSize, baseId, RECIPES, SCHOOL_NAMES, ENCHANTS } from './data.js?v=__BUILD_VERSION__';
 import { generateFloor, tutorialFloor, roomAt, makeGroup, isEasyStart, FIRST_SECTION_COLS, walkable, tileAt, stageAt, T, key } from './dungeon.js?v=__BUILD_VERSION__';
 import { sprite, heroSprite, flipped, docSprite, npcSprite, boxSprite, mobSprite, itemIcon, slotIcon } from './sprites.js?v=__BUILD_VERSION__';
+import { randomHeroName } from './names.js?v=__BUILD_VERSION__';
 import { QUESTS, QUEST_BY_ID, QUEST_NPCS, QUEST_ACHIEVEMENTS } from './quests.js?v=__BUILD_VERSION__';
 import { SLOT_COUNT, readSlot, writeSlot, deleteSlot, listSlots, exportCode, importCode } from './save.js?v=__BUILD_VERSION__';
 import { VERSION, checkForUpdate, installUpdate } from './version.js?v=__BUILD_VERSION__';
@@ -532,16 +533,10 @@ function startCreate(slot) {
   cr = { slot, step: 'who', name: '', sex: 'm', offers: rollJobOffers(), job: null, perks: [], race: 'human', classes, cls: classes[0] };
   renderCreate();
 }
-// Random names: a first name (by sex) plus a goofy nickname, at most 14 letters.
-const NAMES_M = ['Gus', 'Dale', 'Rex', 'Moe', 'Hank', 'Lou', 'Vic', 'Ned', 'Otis', 'Buck', 'Earl', 'Milo', 'Sal', 'Ray', 'Duke', 'Abe', 'Cliff', 'Bo', 'Stan', 'Tito'];
-const NAMES_F = ['Bev', 'Dot', 'Pam', 'Rita', 'Gail', 'Mo', 'Trix', 'Jo', 'Nell', 'Vera', 'Lu', 'Fay', 'Bea', 'Roz', 'Kit', 'Ida', 'Peg', 'Tess', 'Viv', 'Opal'];
-const NICKS = ['the Brave', 'Two-Socks', 'the Loud', 'Big Tuna', 'the Lucky', 'Ironside', 'the Sneaky', 'Quickfoot', 'the Bold', 'No-Refund', 'Pocketful', 'the Sweaty', 'Longshot', 'the Grim', 'Hotdog', 'the Late', 'Boxcar', 'the Mild'];
+// Random names come from names.js (tens of thousands of combos, recent picks avoided).
 function randomName(sex) {
-  for (let i = 0; i < 20; i++) {
-    const n = R.pick(sex === 'f' ? NAMES_F : NAMES_M) + ' ' + R.pick(NICKS);
-    if (n.length <= 14) return n;
-  }
-  return R.pick(sex === 'f' ? NAMES_F : NAMES_M);
+  const taken = listSlots().filter(Boolean).map((s) => s.name || (s.hero && s.hero.name)).filter(Boolean);
+  return randomHeroName(sex, taken);
 }
 function createReady() { return cr.name.trim() && cr.job && cr.perks.length === 2; }
 function offerFor(jobId) { return cr.offers.find((o) => o.job === jobId); }
