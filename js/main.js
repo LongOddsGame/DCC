@@ -289,6 +289,7 @@ function loadSlot(i) {
   G.moves = G.moves || [];
   G.sex = G.sex || 'm';
   if (!byId(CLASSES, G.cls)) G.cls = 'brawler';
+  if (!byId(RACES, G.race)) G.race = 'human';
   if (!G.perks) G.perks = LEGACY_PERK[G.job] ? [LEGACY_PERK[G.job]] : [];
   G.radar = G.radar || 0;
   G.guide = G.guide || 0; guidePath = null;
@@ -581,7 +582,7 @@ function renderCreate() {
   } else if (cr.step === 'race') {
     showOverlay(`
       <h2>THE DUNGEON DOOR: PICK A RACE</h2>
-      <div class="preview"><img src="${preview}" alt=""><div><p><b>${esc(r.name)}</b></p><p class="muted" style="font-size:15px">${esc(r.desc)}</p></div></div>
+      <div class="preview"><img src="${preview}" alt=""><div><p><b>${esc(r.name)}</b></p><p class="muted" style="font-size:15px">${esc(r.desc)}</p><p class="muted" style="font-size:14px">${esc(modsText(r.mods))}</p></div></div>
       <div class="cards">${RACES.map((x) => `<button class="card ${cr.race === x.id ? 'sel' : ''}" data-act="race" data-id="${x.id}"><span class="nm">${esc(x.name)}</span><span class="ds">Odds +${x.odds * 20}</span></button>`).join('')}</div>
       <div class="grid2"><button class="btn grey" data-act="back">BACK</button><button class="btn green" data-act="next">NEXT</button></div>`);
   } else if (cr.step === 'class') {
@@ -1646,41 +1647,60 @@ function enterMap(fresh) {
   if (G.classChangeOffer && !FL.tutorial) offerClassChange();
 }
 
-// ---------- Class swap (start of Floor 3) ----------
-// The hero can pick any class, or keep the one they have. Level, gear, spells and bag all stay.
-// The new class move starts over at Lv 1.
-let swapPick = null;
-function offerClassChange() { swapPick = null; showClassSwap(); }
+// ---------- Class and race swap (start of Floor 3) ----------
+// The hero can pick any class and any race, or keep what they have. Level, gear, spells and bag all stay.
+// A new class move starts over at Lv 1. Odds and how people first felt about you don't change.
+let swapPick = null, swapRace = null;
+function offerClassChange() { swapPick = null; swapRace = null; showClassSwap(); }
 function showClassSwap() {
-  const cur = cls();
+  const cur = cls(), curR = race();
   const c = byId(CLASSES, swapPick) || cur;
+  const r = byId(RACES, swapRace) || curR;
+  const changed = c.id !== cur.id || r.id !== curR.id;
   const sch = (x) => x.cannot && x.cannot.length ? `No ${x.cannot.map((k) => SCHOOL_NAMES[k]).join(', ')}` : 'Any spell';
   const list = [cur, ...CLASSES.filter((x) => x.id !== cur.id).sort((x, y) => x.name.localeCompare(y.name))];
+  const rlist = [curR, ...RACES.filter((x) => x.id !== curR.id).sort((x, y) => x.name.localeCompare(y.name))];
+  const scroll = overlay.scrollTop;
   showOverlay(`
     <h2>NEW FLOOR, NEW YOU?</h2>
-    <div class="bookie"><img src="${sprite('bookie').toDataURL()}" alt=""><p><b style="color:var(--pink)">BOOKIE:</b> The Patrons voted. You get ONE chance to change your class. Pick any class, or stay a ${esc(cur.name)}.</p></div>
-    <div class="preview"><img src="${heroSprite(race(), c, 'down', 0, G.sex).toDataURL()}" alt=""><div><p><b>${esc(race().name)} ${esc(c.name)}</b>${c.id === cur.id ? ' <span class="muted">(current)</span>' : ''}</p><p class="muted" style="font-size:15px">${esc(c.desc)}</p>
+    <div class="bookie"><img src="${sprite('bookie').toDataURL()}" alt=""><p><b style="color:var(--pink)">BOOKIE:</b> The Patrons voted. You get ONE chance to change your class, your race, or both. Or stay a ${esc(curR.name)} ${esc(cur.name)}.</p></div>
+    <div class="preview"><img src="${heroSprite(r, c, 'down', 0, G.sex).toDataURL()}" alt=""><div><p><b>${esc(r.name)} ${esc(c.name)}</b>${changed ? '' : ' <span class="muted">(current)</span>'}</p>
+      <p class="muted" style="font-size:15px">${esc(c.desc)}</p>
       <p style="font-size:15px"><b style="color:var(--gold)">${esc(c.skill.name)}</b> (${c.skill.mp} MP): ${esc(c.skill.desc)}</p>
       <p style="font-size:14px;color:#ff8a8a">${esc(cannotText(c))}</p>
-      <p class="muted" style="font-size:14px">${esc(modsText(c.mods))}</p></div></div>
+      <p class="muted" style="font-size:14px">${esc(modsText(c.mods))}</p>
+      <p style="font-size:15px"><b style="color:var(--gold)">${esc(r.name)}:</b> ${esc(r.desc)}</p>
+      <p class="muted" style="font-size:14px">${esc(modsText(r.mods))}</p></div></div>
     <p class="muted" style="font-size:14px">You keep your level, gear, spells and bag. A new class move starts at Lv 1. Spells you already know stay, even ones the new class can't learn.</p>
+    <h2>CLASS</h2>
     <div class="cards">${list.map((x) => `<button class="card ${c.id === x.id ? 'sel' : ''}" data-act="swappick" data-id="${x.id}"><span class="nm">${esc(x.name)}${x.id === cur.id ? ' ★' : ''}</span><span class="ds">${esc(x.skill.name)} · ${esc(sch(x))}</span></button>`).join('')}</div>
-    <div class="grid2" style="position:sticky; bottom:0; background:var(--night); padding:8px 0"><button class="btn grey" data-act="swapkeep">KEEP ${esc(cur.name.toUpperCase())}</button>${c.id === cur.id ? '<button class="btn" disabled>TAP A CLASS ABOVE</button>' : `<button class="btn green" data-act="swapgo">BECOME ${esc(c.name.toUpperCase())}</button>`}</div>`);
+    <h2>RACE</h2>
+    <div class="cards">${rlist.map((x) => `<button class="card ${r.id === x.id ? 'sel' : ''}" data-act="swaprace" data-id="${x.id}"><span class="nm">${esc(x.name)}${x.id === curR.id ? ' ★' : ''}</span><span class="ds">${esc(modsText(x.mods))}</span></button>`).join('')}</div>
+    <div class="grid2" style="position:sticky; bottom:0; background:var(--night); padding:8px 0"><button class="btn grey" data-act="swapkeep">KEEP ${esc(curR.name.toUpperCase())} ${esc(cur.name.toUpperCase())}</button>${changed ? `<button class="btn green" data-act="swapgo">BECOME ${esc(r.name.toUpperCase())} ${esc(c.name.toUpperCase())}</button>` : '<button class="btn" disabled>TAP A CLASS OR RACE</button>'}</div>`);
+  overlay.scrollTop = scroll;
 }
-function finishClassSwap(id) {
-  const old = cls();
-  if (id && id !== old.id && byId(CLASSES, id)) {
+function finishClassSwap(id, raceId) {
+  const old = cls(), oldR = race();
+  const newCls = id && id !== old.id && byId(CLASSES, id);
+  const newRace = raceId && raceId !== oldR.id && byId(RACES, raceId);
+  if (newCls) {
     G.cls = id;
     G.moveXp = G.moveXp || {};
     G.moveXp.class = 0;
+    say(`<b>You are now a ${esc(cls().name)}!</b> New move: ${esc(cls().skill.name)}.`);
+  }
+  if (newRace) {
+    G.race = raceId;
+    say(`<b>You are now a ${esc(race().name)}!</b> ${esc(race().desc)}`);
+  }
+  if (newCls || newRace) {
     const s = stats();
     G.hp = Math.min(G.hp, s.maxHp); G.mp = Math.min(G.mp, s.maxMp);
-    say(`<b>You are now a ${esc(cls().name)}!</b> New move: ${esc(cls().skill.name)}.`);
-    bookie(`From ${old.name} to ${cls().name}. The odds board just lit up.`);
+    bookie(`From ${oldR.name} ${old.name} to ${race().name} ${cls().name}. The odds board just lit up.`);
   } else {
-    say(`You stay a <b>${esc(old.name)}</b>.`);
+    say(`You stay a <b>${esc(oldR.name)} ${esc(old.name)}</b>.`);
   }
-  G.classChangeOffer = false; G.classChanged = true; swapPick = null;
+  G.classChangeOffer = false; G.classChanged = true; swapPick = null; swapRace = null;
   hideOverlay();
   updateHud();
   renderControls();
@@ -1688,8 +1708,9 @@ function finishClassSwap(id) {
 }
 Object.assign(overlayHandlers, {
   swappick: (_, b) => { swapPick = b.dataset.id; showClassSwap(); },
-  swapkeep: () => finishClassSwap(null),
-  swapgo: () => finishClassSwap(swapPick),
+  swaprace: (_, b) => { swapRace = b.dataset.id; showClassSwap(); },
+  swapkeep: () => finishClassSwap(null, null),
+  swapgo: () => finishClassSwap(swapPick, swapRace),
 });
 
 function renderControls() {
@@ -2401,6 +2422,8 @@ function consume(id) {
   // Health potions heal a share of your max HP, so they stay useful on deeper floors.
   if (it.healPct) heal = Math.max(heal, Math.round(s.maxHp * it.healPct / 100));
   if (it.type === 'potion' && hasPerk('medic')) heal = Math.round(heal * 1.2);
+  const raceBrew = it.type === 'potion' ? (G.race === 'merfolk' ? 1.4 : G.race === 'golem' ? 0.75 : 1) : 1;
+  heal = Math.round(heal * raceBrew);
   if (it.type === 'food' && FL && FL.rule && FL.rule.id === 'allyoucaneat') heal *= 2;
   if (it.type === 'food' && hasPerk('chef')) heal *= 2;
   if (it.type === 'junk') {
@@ -2410,7 +2433,7 @@ function consume(id) {
   } else if (it.type === 'food') {
     if (G.race === 'ogre') heal *= 2;
     say(`You eat the ${esc(it.name)}.`);
-    if (it.spoil && G.race !== 'ogre' && G.race !== 'ghoul' && R.chance(it.spoil)) {
+    if (it.spoil && G.race !== 'ogre' && G.race !== 'ghoul' && G.race !== 'mushroom' && R.chance(it.spoil)) {
       heal = 0;
       const pd = Math.round(3 * fsize());
       if (B) { B.poison = 3; B.poisonDmg = pd; B.burn = false; B.bleed = false; } else { G.hp = Math.max(1, G.hp - pd * 2); flashHp(); }
@@ -2449,7 +2472,7 @@ function consume(id) {
     say(`<span class="good">Mob Radar on!</span> Every mob shows on your map for ${Math.round(G.radar)} seconds. Pausing stops the clock.`);
   }
   if (heal) { G.hp = Math.min(s.maxHp, G.hp + heal); say(`<span class="good">+${heal} HP</span>`); if (B) popHero('+' + heal, '#6bbf59'); }
-  if (it.mana) { G.mp = Math.min(s.maxMp, G.mp + it.mana); say(`<span class="good">+${it.mana} MP</span>`); }
+  if (it.mana) { const mana = Math.round(it.mana * (G.race === 'merfolk' && it.type === 'potion' ? 1.4 : 1)); G.mp = Math.min(s.maxMp, G.mp + mana); say(`<span class="good">+${mana} MP</span>`); }
   if (it.type === 'potion') {
     if (G.sideFx[id] === undefined) {
       G.sideFx[id] = makeRng(G.seed + id.length * 31 + id.charCodeAt(7)).int(0, SIDE_EFFECTS.length - 1);
@@ -2978,6 +3001,7 @@ async function doPlayer(action, targetId) {
       else { await fly(HERO_C, { x: tb.cx, y: tb.cy }, 'fist', '#f2b48a', 260); burst(tb.cx, tb.cy, 'star', '#fff6e0'); }
     }
     if (G.race === 'orc' && G.hp < s.maxHp / 3) { dmg *= 1.5; say('Orc rage!'); }
+    if (G.race === 'minotaur' && action === 'weapon' && !B.charged) { B.charged = true; dmg *= 1.5; say('You charge in horns first!'); }
     const crit = R.chance(0.05 + s.luck * 0.01);
     if (crit) dmg *= 1.5;
     const pow = movePow(action);
@@ -2986,6 +3010,8 @@ async function doPlayer(action, targetId) {
     if (leech > 0) { const h = Math.max(1, Math.round(Math.max(1, dmg * pow) * leech)); G.hp = Math.min(s.maxHp, G.hp + h); popHero('+' + h, '#6bbf59'); }
     if (action === 'weapon' && G.race === 'werewolf' && target.alive && R.chance(0.2)) { await sleep(200); burst(tb.cx, tb.cy, 'slash', '#c8334a'); hitEnemy(target, (heroAtk() + R.int(0, 2) - def) * pow, 'You lunge again! '); }
     if (G.race === 'goblin' && R.chance(0.25)) { const t = R.int(1, 3); G.tokens += t; say(`You swipe ${t} tokens.`); }
+    if (action === 'weapon' && G.race === 'banshee' && target.alive && R.chance(0.15)) { target.frozen = 1; say(`Your wail stuns ${esc(target.full)}!`); }
+    if (action === 'weapon' && G.race === 'mushroom' && target.alive && !target.poison && R.chance(0.2)) { target.poison = 3; say(`Your spores poison ${esc(target.full)}!`); }
     gainMoveXp(action, { name: action === 'kick' ? 'Kick' : w ? 'Swing' : 'Punch', mp: 0 });
   } else if (action.startsWith('move:')) {
     await castMove(action.slice(5), target);
@@ -3011,8 +3037,8 @@ async function doPlayer(action, targetId) {
     const a = alive();
     const avg = a.reduce((t, e) => t + e.spd, 0) / a.length;
     const p = clamp(0.5 + (s.spd + (B.buff.spd || 0) - avg) * 0.05, 0.2, 0.9);
-    if (R.chance(p)) {
-      say('You got away!');
+    if (G.race === 'centaur' || R.chance(p)) {
+      say(G.race === 'centaur' ? 'You gallop away!' : 'You got away!');
       bookie('Running away? Bold strategy. The Patrons are booing.');
       if (B.mob) B.mob.stun = 4;
       B.fled = true;
@@ -3038,7 +3064,7 @@ function moveXp(id) { return (G.moveXp && G.moveXp[id]) || 0; }
 function moveLvl(id) { const x = moveXp(id); let l = 1; while (x >= moveNeed(l + 1)) l++; return l; }
 function movePow(id) { const l = moveLvl(id); return 1 + Math.min(l - 1, 4) * 0.1 + Math.max(0, l - 5) * 0.05; }
 function mpCut(l) { return (l >= 3 ? 1 : 0) + (l >= 5 ? 1 : 0) + Math.max(0, Math.floor((l - 5) / 5)); }
-function moveMp(id, def) { return Math.max(1, Math.ceil(def.mp / 2), def.mp - mpCut(moveLvl(id))); }
+function moveMp(id, def) { return Math.max(1, Math.max(1, Math.ceil(def.mp / 2), def.mp - mpCut(moveLvl(id))) - (G.race === 'imp' ? 1 : 0)); }
 function moveLvlNote(id) {
   const l = moveLvl(id), left = moveNeed(l + 1) - moveXp(id);
   return `Lv ${l} · ${left} more use${left > 1 ? 's' : ''} to Lv ${l + 1}`;
@@ -3314,6 +3340,7 @@ async function enemyAct(e) {
   const K = fd().defK;
   let dmg = raw * K / (K + Math.max(0, heroDef()));
   if (e.intent === 'heavy') dmg *= 1.6;
+  if (G.race === 'golem') dmg *= 0.85;
   dmg = Math.max(1, Math.round(dmg));
   if (B.parry) {
     B.parry = 0;
@@ -3379,6 +3406,11 @@ function resolveMercy(choice) {
 }
 
 function checkEnd() {
+  if (G.hp <= 0 && G.race === 'catfolk' && G.catLife !== G.floor) {
+    G.catLife = G.floor; G.hp = 1; B.poison = 0; updateHud();
+    popHero('9 LIVES', '#f5c542');
+    say('<b>You land on your feet!</b> One of your nine lives is spent. 1 HP left. (Once per floor.)');
+  }
   if (G.hp <= 0) { G.hp = 0; updateHud(); const fight = B; if (!fight.down) { fight.down = true; setTimeout(() => { if (B === fight) die('You were knocked out on live TV.'); }, 700); } B.phase = 'busy'; renderBattleControls(); return true; }
   if (alive().length) return false;
   victory();
