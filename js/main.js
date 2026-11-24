@@ -74,6 +74,8 @@ function stats() {
     const gs = gearStats(G.equip[slot]);
     for (const k in gs) s[k] += gs[k];
   }
+  // Penny's Gym: stats bought with tokens.
+  for (const k in (G.train || {})) s[k] += G.train[k] * TRAIN[k].gain;
   s.maxHp = Math.max(10, s.maxHp);
   return s;
 }
@@ -152,17 +154,33 @@ function addHype(n) {
   if (hasPerk('ham')) mult *= 1.25;
   if (FL && FL.rule.id === 'hypefest') mult *= 2;
   G.hype += n * mult;
-  while (G.hype >= 5) {
-    G.hype -= 5;
-    G.odds *= 0.97;
+  // Crowd gifts need more hype on deeper floors (5 on Floor 1, 10 on Floor 2, 15 on Floor 3...).
+  const need = hypeNeed();
+  while (G.hype >= need) {
+    G.hype -= need;
+    shiftOdds(0.995);
     bookie(R.pick(BOOKIE.hype));
     addItem(hypeGiftBox());
   }
   updateHud();
 }
 // Crowd gifts grow with you, so the best gear still feels special later on.
-function hypeGiftBox() { return G.lvl >= 10 ? 'box_patron' : G.lvl >= 5 ? 'box_gold' : G.lvl >= 3 ? 'box_silver' : 'box_rusty'; }
+function hypeNeed() { return 5 * Math.max(1, (G && G.floor) || 1); }
+// They go by floor, not level: hype gear made level 10+ players drown in Patron boxes (302 boxes on Floor 2).
+function hypeGiftBox() {
+  const f = G.floor || 1;
+  if (f >= 7) return R.chance(0.3) ? 'box_patron' : 'box_gold';
+  if (f >= 4) return 'box_gold';
+  if (f === 3) return R.chance(0.25) ? 'box_gold' : 'box_silver';
+  if (f === 2) return 'box_silver';
+  return G.lvl >= 3 ? 'box_silver' : 'box_rusty';
+}
 function oddsText() { return Math.max(1, Math.round(G.odds)) + ' to 1'; }
+// BOOKIE's odds start around 1000 to 1 (owner) and shrink slowly, so they stay long for the whole run.
+// Each floor has a floor the odds can't drop under (500 on Floor 1, 250 on Floor 2, 125 on Floor 3...).
+function oddsStart(raceOdds, clsOdds) { return 600 + (raceOdds + clsOdds) * 20; }
+function minOdds() { return Math.max(2, Math.round(1000 * Math.pow(0.5, Math.max(1, G.floor || 1)))); }
+function shiftOdds(m) { G.odds = Math.min(5000, Math.max(minOdds(), G.odds * m)); }
 
 function achieve(id) {
   if (G.ach[id] || !ACHIEVEMENTS[id]) return;
@@ -214,7 +232,7 @@ function newGame(slot, name, jobId, raceId, clsId, tutorial = true, perks = [], 
     lvl: 1, xp: 0, hp: 0, mp: 0, tokens: 5,
     inv: {}, order: [], favs: {}, equip: emptyEquip(),
     pos: null, moves: [], radar: 0, respawnT: 0, spawnCount: 0, tutSeen: {}, seen: '', shopBought: {},
-    odds: byId(RACES, raceId).odds + byId(CLASSES, clsId).odds, hype: 0,
+    odds: oddsStart(byId(RACES, raceId).odds, byId(CLASSES, clsId).odds), hype: 0, oddsV: 2,
     opened: [], killed: [], bossesDead: [], cleared: false,
     doc: { trust: 0, fear: 0, respect: 0, owed: 0, met: false, eventDone: false, gift: false, memory: [] },
     sideFx: {}, ach: {}, boxesOpened: 0, deaths: 0, kills: 0, spared: 0, steps: 0, playTime: 0, buff: null,
@@ -282,6 +300,12 @@ function loadSlot(i) {
   buildFloor();
   if (oldWorld || !G.pos || !walkable(FL, G.pos.x, G.pos.y)) G.pos = { ...FL.start };
   if ((G.upgV || 1) < 2) refundOverCap();
+  // Odds used to start near 20 to 1 and hit 1 to 1 by Floor 2. Move old saves onto the new 1000 to 1 scale.
+  if ((G.oddsV || 1) < 2) {
+    const start = oddsStart((byId(RACES, G.race) || { odds: 10 }).odds, (byId(CLASSES, G.cls) || { odds: 5 }).odds);
+    G.odds = Math.max(minOdds(), Math.round(start * Math.pow(0.65, Math.max(0, (G.floor || 1) - 1 + (G.cleared ? 1 : 0)))));
+    G.oddsV = 2;
+  }
   return true;
 }
 
@@ -333,7 +357,7 @@ function updateHud() {
   const need = xpNeed(G.lvl);
   $('xp-fill').style.width = clamp((G.xp / need) * 100, 0, 100) + '%';
   $('xp-text').textContent = G.xp + '/' + need;
-  const h = Math.floor(G.hype);
+  const h = Math.max(0, Math.min(5, Math.floor((G.hype / hypeNeed()) * 5)));
   $('hud-hype').textContent = '▮'.repeat(h) + '▯'.repeat(5 - h);
   $('hud-tokens').textContent = G.tokens;
 }
@@ -555,7 +579,7 @@ function renderCreate() {
     showOverlay(`
       <h2>THE DUNGEON DOOR: PICK A RACE</h2>
       <div class="preview"><img src="${preview}" alt=""><div><p><b>${esc(r.name)}</b></p><p class="muted" style="font-size:15px">${esc(r.desc)}</p></div></div>
-      <div class="cards">${RACES.map((x) => `<button class="card ${cr.race === x.id ? 'sel' : ''}" data-act="race" data-id="${x.id}"><span class="nm">${esc(x.name)}</span><span class="ds">Starting odds ${x.odds} to 1</span></button>`).join('')}</div>
+      <div class="cards">${RACES.map((x) => `<button class="card ${cr.race === x.id ? 'sel' : ''}" data-act="race" data-id="${x.id}"><span class="nm">${esc(x.name)}</span><span class="ds">Odds +${x.odds * 20}</span></button>`).join('')}</div>
       <div class="grid2"><button class="btn grey" data-act="back">BACK</button><button class="btn green" data-act="next">NEXT</button></div>`);
   } else if (cr.step === 'class') {
     const sch = (x) => x.cannot && x.cannot.length ? `No ${x.cannot.map((k) => SCHOOL_NAMES[k]).join(', ')}` : 'Any spell';
@@ -576,7 +600,7 @@ function renderCreate() {
         <p><b>${esc(cr.name.trim())}</b></p>
         <p class="muted" style="font-size:15px">${cr.sex === 'f' ? 'Female' : 'Male'} ${esc(r.name)} ${esc(c.name)}, former ${esc(j.name.toLowerCase())}</p>
         <p class="muted" style="font-size:14px">${cr.perks.map((p) => esc(PERKS[p].name)).join(' + ')}</p>
-        <p style="color:var(--gold); font-size:15px">Starting odds ${r.odds + c.odds} to 1</p></div></div>
+        <p style="color:var(--gold); font-size:15px">Starting odds ${oddsStart(r.odds, c.odds)} to 1</p></div></div>
       <div class="bookie"><img src="${sprite('bookie').toDataURL()}" alt=""><p><b style="color:var(--pink)">BOOKIE:</b> ${r.odds + c.odds >= 20 ? 'A long shot! The Patrons love a long shot. Mostly to watch it fail.' : 'A safe pick. Boring, but the Patrons respect a sure thing.'}</p></div>
       <div class="grid2"><button class="btn grey" data-act="back">BACK</button><button class="btn red" data-act="begin">START TUTORIAL</button></div>
       <button class="btn" data-act="beginskip">SKIP TUTORIAL, GO TO FLOOR 1</button>`);
@@ -1101,10 +1125,26 @@ function sellPrice(id) {
   const v = it.value || Math.max(1, Math.floor((it.price || RARITY_PRICE[it.rarity] || 6) / 2));
   return hasPerk('salesman') ? Math.ceil(v * 1.5) : v;
 }
-function stockKey() { return G.floor + ':' + G.lvl; }
+function stockKey() { return G.floor + ':' + G.lvl + (G.restock && G.restock.key === G.floor + ':' + G.lvl ? ':r' + G.restock.n : ''); }
+// Pay Penny to restock right now. Each restock before your next level costs more.
+function restockCost() { const n = G.restock && G.restock.key === G.floor + ':' + G.lvl ? G.restock.n : 0; return Math.round(40 * fsize() * (1 + n)); }
+
+// Penny's Gym: a token sink (owner banked 13,751 tokens by the end of Floor 2). Each session makes you a
+// little stronger for good and costs 40% more than the last. Deeper floors allow more sessions per stat.
+const TRAIN = {
+  atk: { name: 'Heavy Bag', gain: 1, desc: '+1 attack' },
+  def: { name: 'Sparring Pads', gain: 1, desc: '+1 defense' },
+  mag: { name: 'Meditation Mat', gain: 1, desc: '+1 magic' },
+  spd: { name: 'Jump Rope', gain: 1, desc: '+1 speed' },
+  maxHp: { name: 'Stair Climber', gain: 6, desc: '+6 max HP' },
+  maxMp: { name: 'Brain Teasers', gain: 3, desc: '+3 max MP' },
+};
+function trainCap() { return 2 * Math.max(1, G.floor || 1); }
+function trainCost(k) { return Math.round(80 * fsize() * Math.pow(1.4, (G.train && G.train[k]) || 0)); }
 function shopStock() {
   const t = shopTier();
-  const rng = makeRng(((G.seed ^ (G.floor * 7919) ^ (G.lvl * 104729)) >>> 0) || 1);
+  const rs = G.restock && G.restock.key === G.floor + ':' + G.lvl ? G.restock.n : 0;
+  const rng = makeRng(((G.seed ^ (G.floor * 7919) ^ (G.lvl * 104729) ^ (rs * 15485863)) >>> 0) || 1);
   const basics = [], scrolls = [];
   for (let i = 0; i <= t; i++) { basics.push(...SHOP_TIERS[i].basics); scrolls.push(...SHOP_TIERS[i].scrolls.filter((sc) => !knownScroll(sc))); }
   basics.push(...(fd().shop || []));
@@ -1174,7 +1214,16 @@ function renderShop(extra = '', keepScroll = true) {
     const rest = st.specials.filter((id) => !worth.includes(id));
     body = `${worth.length ? `<h3 class="sub">WORTH BUYING: STRONGER THAN WHAT YOU HAVE</h3><div class="items">${worth.map((id) => shopRow(id, true, bought)).join('')}</div>` : '<p class="muted" style="font-size:14px">Nothing here beats the gear and moves you already have.</p>'}
       <h3 class="sub">SUPPLIES</h3><div class="items">${st.basics.map((id) => shopRow(id, false, bought)).join('')}</div>
-      ${rest.length ? `<h3 class="sub">OTHER SPECIALS: ONE OF EACH</h3><div class="items">${rest.map((id) => shopRow(id, true, bought)).join('')}</div>` : ''}`;
+      ${rest.length ? `<h3 class="sub">OTHER SPECIALS: ONE OF EACH</h3><div class="items">${rest.map((id) => shopRow(id, true, bought)).join('')}</div>` : ''}
+      <button class="btn gold" data-act="restock" ${G.tokens < restockCost() ? 'disabled' : ''}>RESTOCK SPECIALS NOW · ${restockCost()} TOKENS</button>`;
+  } else if (shopState.tab === 'gym') {
+    const cap = trainCap();
+    body = `<p class="muted" style="font-size:15px">Penny's cousin runs a gym in the back. Every session makes you stronger for good. Each one costs more than the last, and on Floor ${G.floor} you can do up to ${cap} sessions of each.</p>
+      <div class="items">${Object.entries(TRAIN).map(([k, t]) => {
+        const n = (G.train && G.train[k]) || 0, c = trainCost(k), full = n >= cap;
+        return `<div class="item"><div class="txt"><span class="nm" style="color:var(--gold)">${esc(t.name)} <span class="have">${n}/${cap}</span></span><span class="ds">${esc(t.desc)} for good. You have +${n * t.gain} ${STAT_NAMES[k]} from training.</span></div>
+          <button class="act gold" data-act="train" data-id="${k}" ${full || G.tokens < c ? 'disabled' : ''}>${full ? 'Max for now' : c + ' tokens'}</button></div>`;
+      }).join('')}</div>`;
   } else {
     const ids = G.order.filter((id) => sellableCount(id) > 0).sort((a, b) => isJunk(b) - isJunk(a));
     const junk = junkList().filter((id) => sellableCount(id) > 0);
@@ -1195,7 +1244,7 @@ function renderShop(extra = '', keepScroll = true) {
     <div class="row-between"><h2>PENNY'S PAWN</h2><span class="tok">${G.tokens} tokens</span></div>
     <div class="bookie"><img src="${sprite('shop').toDataURL()}" alt=""><p><b style="color:var(--gold)">PENNY:</b> ${esc(shopState.line)}</p></div>
     <p class="muted" style="font-size:15px">Penny restocks every time you level up or reach a new floor. Prices go up on deeper floors, and her better shelves open deeper down. ${next ? `New supplies and scrolls unlock on Floor ${next.floor} at level ${next.lvl}.` : 'Every shelf is open.'}</p>
-    <div class="tabs"><button class="tab ${shopState.tab === 'buy' ? 'on' : ''}" data-act="shoptab" data-id="buy">Buy</button><button class="tab ${shopState.tab === 'sell' ? 'on' : ''}" data-act="shoptab" data-id="sell">Sell</button><button class="tab" data-act="shopgear">My gear</button></div>
+    <div class="tabs"><button class="tab ${shopState.tab === 'buy' ? 'on' : ''}" data-act="shoptab" data-id="buy">Buy</button><button class="tab ${shopState.tab === 'sell' ? 'on' : ''}" data-act="shoptab" data-id="sell">Sell</button><button class="tab ${shopState.tab === 'gym' ? 'on' : ''}" data-act="shoptab" data-id="gym">Gym</button><button class="tab" data-act="shopgear">My gear</button></div>
     ${body}
     ${extra ? `<div class="shop-toast">${extra}</div>` : ''}
     <button class="btn grey" data-act="shopclose" style="position:sticky; bottom:0">LEAVE SHOP</button>`);
@@ -1246,6 +1295,28 @@ Object.assign(overlayHandlers, {
     showFloorClear(`Sold your junk to the Patrons for ${v} tokens. You have ${G.tokens} tokens.`);
   },
   downstairs: () => goDownstairs(),
+  restock: () => {
+    const c = restockCost();
+    if (G.tokens < c) return;
+    G.tokens -= c;
+    const k = G.floor + ':' + G.lvl;
+    G.restock = { key: k, n: G.restock && G.restock.key === k ? G.restock.n + 1 : 1 };
+    updateHud();
+    renderShop(`<p class="note good">Penny wheels out a fresh cart. That cost ${c} tokens.</p>`);
+  },
+  train: (_, b) => {
+    const k = b.dataset.id, c = trainCost(k);
+    if (!TRAIN[k] || G.tokens < c || ((G.train && G.train[k]) || 0) >= trainCap()) return;
+    const before = stats();
+    G.tokens -= c;
+    G.train = G.train || {};
+    G.train[k] = (G.train[k] || 0) + 1;
+    if (k === 'maxHp') G.hp = Math.min(stats().maxHp, G.hp + TRAIN[k].gain);
+    if (k === 'maxMp') G.mp = Math.min(stats().maxMp, G.mp + TRAIN[k].gain);
+    updateHud();
+    renderShop(`<p class="note good">${esc(TRAIN[k].name)} done: ${STAT_NAMES[k]} ${before[k]} → ${stats()[k]}. That cost ${c} tokens.</p>`);
+    save();
+  },
 });
 
 // ---------- Crafting bench: recipes unlock as you level up ----------
@@ -2160,7 +2231,7 @@ function consume(id) {
     if (it.spoil && G.race !== 'ogre' && G.race !== 'ghoul' && R.chance(it.spoil)) {
       heal = 0;
       const pd = Math.round(3 * fsize());
-      if (B) { B.poison = 3; B.poisonDmg = pd; B.burn = false; } else { G.hp = Math.max(1, G.hp - pd * 2); flashHp(); }
+      if (B) { B.poison = 3; B.poisonDmg = pd; B.burn = false; B.bleed = false; } else { G.hp = Math.max(1, G.hp - pd * 2); flashHp(); }
       say('<b>It was spoiled!</b> Your stomach turns. You are poisoned.');
     } else if (it.buff) {
       for (const [k, v] of Object.entries(it.buff)) setBuff(k, Math.round(v * fsize()));
@@ -2396,6 +2467,7 @@ function makeEnemy(member, i, depth = 0) {
   e.xp = Math.round(e.xp * (1 + depth) * fsize());
   e.tokens = [Math.round(e.tokens[0] * fsize()), Math.round(e.tokens[1] * fsize())];
   e.healer = !!base.healer; e.poisonHit = base.poison || 0;
+  e.rally = !!base.rally; e.bleedHit = base.bleed || 0; e.fineHit = base.fine || 0; e.stealHit = base.steal || 0;
   if (member.tutorial) { e.hp = 9; e.atk = 3; }
   e.maxHp = e.hp;
   const label = e.traits.map((t) => TRAITS[t].name).join(' ');
@@ -2443,6 +2515,8 @@ function rollIntent(e) {
   else e.intent = r < 0.68 ? 'attack' : r < 0.88 ? 'heavy' : 'defend';
   // Floor 2 and below: some mobs patch up a badly hurt friend instead of attacking.
   if (!e.boss && (e.healer || fd().healers) && B && hurtFriend(e) && R.chance(e.healer ? 0.6 : 0.25)) e.intent = 'heal';
+  // Floor 3: mobs blare an alarm so every friend hits 15% harder (up to 3 times a fight).
+  else if (!e.boss && (e.rally || fd().rally) && B && (B.rallies || 0) < 3 && B.enemies.filter((x) => x.alive).length > 1 && R.chance(e.rally ? 0.4 : 0.1)) e.intent = 'rally';
 }
 function hurtFriend(e) { return B.enemies.filter((x) => x.alive && x !== e && x.hp < x.maxHp * 0.45).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0]; }
 function intentText(e) {
@@ -2453,6 +2527,7 @@ function intentText(e) {
   if (e.intent === 'heavy') return 'Winding up: ' + a.heavy;
   if (e.intent === 'defend') return 'Defending';
   if (e.intent === 'heal') return 'Next: Patch up a friend';
+  if (e.intent === 'rally') return 'Next: Blare the alarm (friends hit harder)';
   return 'Next: ' + ((BOSSES[e.bossType] || {}).special || 'Special');
 }
 
@@ -2637,17 +2712,18 @@ function hitEnemy(e, dmg, why = '') {
     e.phase = 2; e.atk = Math.round(e.atk * 1.2);
     bookie(BOSSES[e.bossType].angry);
     if (e.bossType === 'buffet') splitBlob(e);
+    if (e.bossType === 'metermaid') splitBlob(e, 'drone');
   }
 }
 
 // The Buffet Blob splits off two Leftover Blobs when it gets angry (phase 2).
-function splitBlob(boss) {
-  const m = MINIONS.leftover;
+function splitBlob(boss, kind = 'leftover') {
+  const m = MINIONS[kind];
   for (let i = 0; i < 2 && B.enemies.length < 3; i++) {
-    const e = { id: B.enemies.length, name: m.name, full: m.name, sprite: m.sprite, atkKey: m.atkKey, hp: m.hp, maxHp: m.hp, atk: m.atk, def: m.def, spd: m.spd, xp: m.xp, tokens: m.tokens, drops: ['food_mystery'], traits: [], alive: true, flash: 0, slash: 0, intent: 'attack', begged: true, poison: 0, frozen: 0, minion: true };
+    const e = { id: B.enemies.length, name: m.name, full: m.name, sprite: m.sprite, atkKey: m.atkKey, hp: m.hp, maxHp: m.hp, atk: m.atk, def: m.def, spd: m.spd, xp: m.xp, tokens: m.tokens, drops: kind === 'drone' ? ['j_wire'] : ['food_mystery'], traits: [], alive: true, flash: 0, slash: 0, intent: 'attack', begged: true, poison: 0, frozen: 0, minion: true };
     B.enemies.push(e);
   }
-  say(`${esc(boss.full)} splits! <b>Leftover Blobs</b> join the fight.`);
+  say(kind === 'drone' ? `${esc(boss.full)} radios for backup! <b>Ticket Drones</b> join the fight.` : `${esc(boss.full)} splits! <b>Leftover Blobs</b> join the fight.`);
 }
 function killEnemy(e, how = 'kill') {
   e.alive = false; e.hp = 0;
@@ -2664,7 +2740,10 @@ function killEnemy(e, how = 'kill') {
     say(`It explodes! You take <b>${d}</b> damage.`);
   }
   if (e.traits.includes('famous')) { addHype(2); achieve('ratings'); }
-  for (const sl of GEAR_SLOTS) if (G.equip[sl] && ITEMS[G.equip[sl]].hype) addHype(0.5);
+  // Hype gear: +0.2 hype per kill for the first piece, +0.1 for each more, never more than +0.4.
+  // (It used to be +0.5 per piece, so a full hype outfit opened a box every two kills.)
+  const hypeGear = GEAR_SLOTS.filter((sl) => G.equip[sl] && ITEMS[G.equip[sl]].hype).length;
+  if (hypeGear) addHype(Math.min(0.4, 0.1 + 0.1 * hypeGear));
   if (G.race === 'ghoul') { G.hp = Math.min(stats().maxHp, G.hp + 4); say('You feed on it. +4 HP.'); }
 }
 
@@ -2838,6 +2917,9 @@ async function enemyTurn() {
     if (e.frozen > 0) { e.frozen--; say(`${esc(e.full)} is frozen and can't move!`); continue; }
     let acts = 1;
     if (e.traits.includes('fast') && R.chance(0.3)) acts = 2;
+    if (FL.rule.id === 'rushhour' && !e.boss && R.chance(0.15)) acts = 2;
+    // The Tow Truck Titan's engine roars in phase 2: it acts twice every other turn.
+    if (e.bossType === 'towtruck' && e.phase === 2 && B.turn % 2 === 0) acts = 2;
     for (let a = 0; a < acts && e.alive && G.hp > 0; a++) {
       await sleep(180);
       await enemyAct(e);
@@ -2847,11 +2929,19 @@ async function enemyTurn() {
     }
     if (G.hp <= 0) break;
   }
-  if (B.poison > 0 && G.hp > 0) { const pd = B.poisonDmg || Math.round(2 * fsize()); G.hp -= pd; B.poison--; if (!B.poison) B.poisonDmg = 0; flashHp(); popHero('-' + pd, '#b8e05a'); say(`${B.burn ? 'The grease burns' : 'Poison stings'}. <b>${pd}</b> damage.`); }
+  if (B.poison > 0 && G.hp > 0) { const pd = B.poisonDmg || Math.round(2 * fsize()); G.hp -= pd; B.poison--; if (!B.poison) B.poisonDmg = 0; flashHp(); popHero('-' + pd, '#b8e05a'); say(`${B.burn ? 'The grease burns' : B.bleed ? 'You bleed' : 'Poison stings'}. <b>${pd}</b> damage.`); }
   for (const e of alive()) if (e.poison > 0 && G.hp > 0) { e.poison--; hitEnemy(e, 2 + Math.floor(stats().mag / 4), 'Venom! '); }
   for (const e of alive()) rollIntent(e);
   updateHud();
   if (checkEnd()) return;
+  if (B.noStun > 0) B.noStun--;
+  // Hooked by the Tow Truck Titan: you lose this turn (and can't be hooked again for 2 turns).
+  if (B.stun > 0) {
+    B.stun = 0; B.noStun = 2; B.turn++;
+    say('<b>You are hooked to the tow chain and can\'t act!</b>');
+    await sleep(600);
+    return enemyTurn();
+  }
   // Hurt cowardly mobs beg for their lives.
   const beggar = alive().find((e) => !e.begged && !e.boss && e.traits.includes('cowardly') && e.hp <= e.maxHp * (0.35 + Math.max(0, chaBonus()) * 0.01));
   if (beggar) {
@@ -2880,12 +2970,40 @@ async function enemyAct(e) {
       return;
     }
   }
+  if (e.intent === 'rally') {
+    B.rallies = (B.rallies || 0) + 1;
+    for (const x of alive()) x.atk = Math.round(x.atk * 1.15) + 1;
+    burst(eb.cx, eb.cy, 'sparkle', '#ff5fa2');
+    say(`${esc(e.full)} blares a <b>car alarm</b>! Every mob here hits harder.`);
+    return;
+  }
+  if (e.intent === 'fare' && e.bossType === 'towtruck') {
+    say(`${esc(e.full)} uses <b>Hook and Drag</b>!`);
+    await fly({ x: eb.cx, y: eb.cy }, HERO_C, 'bar', '#8b84a3', 420);
+    const d = Math.max(1, Math.round(e.atk * 0.8 * fd().defK / (fd().defK + Math.max(0, heroDef()))));
+    G.hp -= d; flashHp(); popHero('-' + d, '#ff5fa2');
+    if (B.noStun > 0) say(`You take <b>${d}</b> damage, but you slip the hook.`);
+    else { B.stun = 1; say(`You take <b>${d}</b> damage and get hooked! You lose your next turn.`); }
+    return;
+  }
+  if (e.intent === 'fare' && e.bossType === 'metermaid') {
+    say(`${esc(e.full)} uses <b>Boot Clamp</b>!`);
+    await fly({ x: eb.cx, y: eb.cy }, HERO_C, 'tickets', '#4fd8e8', 380);
+    const d = Math.max(1, Math.round(e.atk * 0.5 * fd().defK / (fd().defK + Math.max(0, heroDef()))));
+    G.hp -= d; flashHp(); popHero('-' + d, '#ff5fa2');
+    const cut = Math.round(3 * fsize());
+    B.buff.def = (B.buff.def || 0) - cut;
+    const t = Math.min(G.tokens, Math.round(Math.min(250, G.tokens * 0.04)));
+    G.tokens -= t;
+    say(`You take <b>${d}</b> damage. The boot locks on: <b>-${cut} defense</b> for this fight.${t ? ` She writes you a ticket for <b>${t}</b> tokens.` : ''}`);
+    return;
+  }
   if (e.intent === 'fare' && e.bossType === 'frycook') {
     say(`${esc(e.full)} uses <b>Grease Fire</b>!`);
     await fly({ x: eb.cx, y: eb.cy }, HERO_C, 'blob', '#f5c542', 380);
     const d = Math.max(1, Math.round(e.atk * 0.6 * fd().defK / (fd().defK + Math.max(0, heroDef()))));
     G.hp -= d; flashHp(); popHero('-' + d, '#ff8a3a');
-    B.poison = 3; B.poisonDmg = Math.round(e.atk * 0.25); B.burn = true;
+    B.poison = 3; B.poisonDmg = Math.round(e.atk * 0.25); B.burn = true; B.bleed = false;
     say(`You take <b>${d}</b> damage and catch fire! You'll burn for 3 turns.`);
     return;
   }
@@ -2939,7 +3057,18 @@ async function enemyAct(e) {
   if (dmg >= stats().maxHp * 0.25) bookie(R.pick(BOOKIE.hurt));
   if ((e.traits.includes('toxic') && R.chance(0.35)) || (e.poisonHit && R.chance(e.poisonHit))) {
     if (G.race === 'dwarf') say('Poison! Your dwarf gut shrugs it off.');
-    else { B.poison = 3; B.burn = false; say('You are poisoned!'); }
+    else { B.poison = 3; B.burn = false; B.bleed = false; say('You are poisoned!'); }
+  }
+  if (e.bleedHit && R.chance(e.bleedHit)) { B.poison = 3; B.poisonDmg = Math.round(e.atk * 0.2); B.burn = false; B.bleed = true; say('Spikes! You are bleeding.'); }
+  const fineChance = e.fineHit || (FL.rule.id === 'nofreeparking' && !e.boss ? 0.12 : 0);
+  if (fineChance && G.tokens > 0 && R.chance(fineChance)) {
+    const t = Math.min(G.tokens, Math.round(R.int(4, 10) * fsize()));
+    G.tokens -= t; B.fines = (B.fines || 0) + t;
+    say(`<b>PARKING FINE!</b> ${esc(e.full)} takes ${t} tokens.`);
+  }
+  if (e.stealHit && R.chance(e.stealHit)) {
+    const options = G.order.filter((id) => count(id) > 0 && ITEMS[id].type !== 'box' && !isEquipped(id));
+    if (options.length) { const id = R.pick(options); removeItem(id); B.stolen.push(id); say(`${esc(e.full)} pockets your ${esc(ITEMS[id].name)}! Win to get it back.`); }
   }
   if (e.traits.includes('greedy') && R.chance(0.3)) {
     const options = G.order.filter((id) => count(id) > 0 && ITEMS[id].type !== 'box' && !isEquipped(id));
@@ -2993,16 +3122,19 @@ function victory() {
   const s = stats();
   let xp = 0, tokens = 0;
   const drops = [];
-  // Grinding easy mobs pays less: half XP when you are 3+ levels past where this part of the floor expects
-  // you to be, a quarter at 6+. Respawned mobs also give half XP.
+  // Grinding easy mobs pays less: half XP when you are 2+ levels past where this part of the floor expects
+  // you to be, a quarter at 4+, a tenth at 6+. Respawned mobs also give half XP.
+  // (Owner hit level 14 on Floor 2 where the plan expects 9, after PR #20 doubled the mobs.)
   const [l0, l1] = fd().lvl, expect = l0 + (l1 - l0) * (B.depth || 0);
-  const over = G.lvl - expect, xpMult = over >= 6 ? 0.25 : over >= 3 ? 0.5 : 1;
+  const over = G.lvl - expect;
+  let xpMult = over >= 6 ? 0.1 : over >= 4 ? 0.25 : over >= 2 ? 0.5 : 1;
+  if (FL.rule.id === 'rushhour') xpMult *= 1.25;
   const deep = G.floor >= 2 || G.lvl >= 5;
   for (const e of B.enemies) {
     const ex = e.xp * xpMult * (e.respawn ? 0.5 : 1);
     if (e.spared) { xp += Math.floor(ex / 2); continue; }
     xp += Math.max(1, Math.round(ex));
-    tokens += R.int(e.tokens[0], e.tokens[1]) + 1;
+    tokens += R.int(e.tokens[0], e.tokens[1]);
     // Drops (cut again for the 10 floor plan: owner had too many leftover items and boxes).
     const scav = hasPerk('scavenger') ? 0.15 : 0;
     if (e.drops.length && R.chance(0.45 + scav)) drops.push(R.pick(e.drops));
@@ -3017,18 +3149,20 @@ function victory() {
     G.bossesDead.push(boss.bossId);
     objIndex.delete(key(FL.bosses.find((b) => b.id === boss.bossId)));
     drops.push('box_gold', tierId(BOSSES[boss.bossType].drop || 'box_silver'));
-    G.odds *= 0.75;
+    shiftOdds(0.95);
     tag('brave');
     achieve(boss.bossType);
     const left = FL.bosses.filter((b) => !G.bossesDead.includes(b.id)).length;
     bookie(left === 0 ? 'BOTH BOSSES DOWN! The stairs are unlocked. The Patrons are screaming.' : `${boss.name} is finished! One boss left before the stairs open.`);
   } else {
-    G.odds *= B.enemies.some((e) => e.elite) ? 0.85 : 0.95;
+    shiftOdds(B.enemies.some((e) => e.elite) ? 0.99 : 0.998);
     bookie(G.hp < s.maxHp * 0.25 ? R.pick(BOOKIE.lowWin) : R.pick(BOOKIE.win));
   }
-  if (G.hp < s.maxHp * 0.25) { addHype(1); G.odds *= 0.97; }
+  if (G.hp < s.maxHp * 0.25) { addHype(1); shiftOdds(0.997); }
   if (B.turn <= 1) addHype(1);
   if (hasPerk('tipjar')) tokens += 3;
+  // Parking fines: win and the meters spill half of what they took back to you.
+  if (B.fines) { const back = Math.floor(B.fines / 2); tokens += back; if (back) say(`The meters pop open. You get <b>${back}</b> of your ${B.fines} fined tokens back.`); }
   if (hasPerk('learner')) xp = Math.round(xp * 1.25);
   if (s.xpPct) xp = Math.round(xp * (1 + s.xpPct / 100));
   if (hasPerk('firstaid') && G.hp > 0) G.hp = Math.min(s.maxHp, G.hp + 4);
@@ -3049,7 +3183,6 @@ function victory() {
     }
     mobsLive = mobsLive.filter((m) => m !== B.mob);
   }
-  G.odds = Math.max(1, G.odds);
   updateHud();
   B.phase = 'end';
   renderBattleControls();
@@ -3065,7 +3198,7 @@ function gainXp(n) {
     const s = stats();
     G.hp = Math.min(s.maxHp, G.hp + 10);
     G.mp = Math.min(s.maxMp, G.mp + 5);
-    G.odds *= 0.95;
+    shiftOdds(0.995);
     say(`<span class="good">LEVEL UP! You are now level ${G.lvl}.</span>`);
   }
 }
@@ -3096,7 +3229,7 @@ overlayHandlers.reload = () => {
   const slot = G.slot;
   if (!loadSlot(slot)) return showTitle();
   G.deaths++;
-  G.odds *= 1.3;
+  shiftOdds(1.1);
   enterMap(false);
   bookie(G.deaths === 1 ? 'And we are back! Your odds took a hit. The audience remembers.' : `Death number ${G.deaths}. The Patrons have started a side bet on number ${G.deaths + 1}.`);
   if (!FL.tutorial) achieve('death');
@@ -3154,6 +3287,9 @@ function goDownstairs() {
   G.pos = { ...FL.start };
   enterMap(true);
   achieve('floor' + G.floor);
+  // Owner: you can change your class at the start of Floor 3. The class change screen is its own feature;
+  // G.classChangeOffer marks that this hero has earned one (offerClassChange shows it if it exists).
+  if (G.floor === 3 && !G.classChanged) { G.classChangeOffer = true; if (typeof offerClassChange === 'function') offerClassChange(); }
   save();
 }
 
@@ -3591,4 +3727,4 @@ Object.assign(overlayHandlers, {
 flushStats();
 
 // Test hook for automated playtests only: open the game with ?debug to reach these from the browser console.
-if (location.search.includes('debug')) window.__LO = { G: () => G, FL: () => FL, B: () => B, startBattle, startBossBattle, doPlayer, stats, shopStock, priceOf, upgCost, canUpgrade, gearStats, save, makeEnemy };
+if (location.search.includes('debug')) window.__LO = { G: () => G, FL: () => FL, B: () => B, startBattle, startBossBattle, doPlayer, stats, shopStock, priceOf, upgCost, canUpgrade, gearStats, save, makeEnemy, newGame, goDownstairs, gainXp, consume, enemyTurn, victory, shiftOdds, minOdds, loadSlot, addHype, openShop };
