@@ -375,6 +375,7 @@ function updateHud() {
 // keep: a screen name. Redrawing the same screen (a tap on a button, tab or fold) keeps your place in the list
 // instead of jumping back to the top. A different screen, or none, starts at the top.
 function showOverlay(html, keep = '') {
+  if (typeof stickEnd === 'function' && stickId !== null) stickEnd();
   const scroll = keep && !overlay.hidden && overlay.dataset.keep === keep ? overlay.scrollTop : 0;
   overlay.innerHTML = html;
   overlay.hidden = false;
@@ -1920,6 +1921,9 @@ function stickEnd() {
   fstick.style.left = ''; fstick.style.top = '';
 }
 stageEl.addEventListener('pointerdown', (e) => {
+  // A stick left over from a touch whose lift was missed (iPhone can drop it when a menu opens under the
+  // finger) used to block every new touch, so the hero could never move again. A new touch takes over.
+  if (stickId !== null && e.pointerId !== stickId) stickEnd();
   if (!$('app').classList.contains('fullview') || !canAct() || stickId !== null) return;
   const r = stageEl.getBoundingClientRect();
   if (e.clientY - r.top < r.height * 0.4) return; // the top of the screen is for the mini map and messages
@@ -1934,8 +1938,10 @@ stageEl.addEventListener('pointerdown', (e) => {
   stickMove(e);
 });
 stageEl.addEventListener('pointermove', (e) => { if (stickId !== null && e.pointerId === stickId) stickMove(e); });
-stageEl.addEventListener('pointerup', (e) => { if (e.pointerId === stickId) stickEnd(); });
-stageEl.addEventListener('pointercancel', (e) => { if (e.pointerId === stickId) stickEnd(); });
+// Listen on the whole window too, so a lift over a menu or outside the game screen still lets go of the stick.
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach((ev) => window.addEventListener(ev, (e) => { if (e.pointerId === stickId) stickEnd(); }, true));
+window.addEventListener('touchend', (e) => { if (stickId !== null && e.touches.length === 0) stickEnd(); }, true);
+window.addEventListener('touchcancel', () => { if (stickId !== null) stickEnd(); }, true);
 stageEl.addEventListener('touchstart', (e) => { if ($('app').classList.contains('fullview')) e.preventDefault(); }, { passive: false });
 // Sliding your thumb onto another arrow changes direction without lifting it.
 controls.addEventListener('pointerover', (e) => {
