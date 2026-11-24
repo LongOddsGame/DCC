@@ -195,7 +195,7 @@ export const CLASSES = [
 ];
 // Class move costs, set by what the move does so every class pays the same for the same power (balance pass 1.0.22).
 const KIND_MP = { double: 4, bolt: 4, flashy: 3, shrapnel: 5, talk: 3, heal: 4, stun: 4, steal: 3, burst: 5, freeze: 4, drain: 4, poison: 4, multi: 4, song: 3, rampage: 5, crit: 5, guard: 3, blind: 4, curse: 4,
-  execute: 4, shred: 4, parry: 3, gamble: 4, audit: 4, chain: 5, reckless: 3, bleed: 4, barrier: 4, mark: 3 };
+  execute: 4, shred: 4, parry: 3, gamble: 4, audit: 4, chain: 5, reckless: 4, bleed: 4, barrier: 4, mark: 3 };
 for (const c of CLASSES) if (KIND_MP[c.skill.kind]) c.skill.mp = KIND_MP[c.skill.kind];
 
 

@@ -1543,7 +1543,7 @@ function showClassSwap() {
       <p class="muted" style="font-size:14px">${esc(modsText(c.mods))}</p></div></div>
     <p class="muted" style="font-size:14px">You keep your level, gear, spells and bag. A new class move starts at Lv 1. Spells you already know stay, even ones the new class can't learn.</p>
     <div class="cards">${list.map((x) => `<button class="card ${c.id === x.id ? 'sel' : ''}" data-act="swappick" data-id="${x.id}"><span class="nm">${esc(x.name)}${x.id === cur.id ? ' ★' : ''}</span><span class="ds">${esc(x.skill.name)} · ${esc(sch(x))}</span></button>`).join('')}</div>
-    <div class="grid2" style="position:sticky; bottom:0"><button class="btn grey" data-act="swapkeep">KEEP ${esc(cur.name.toUpperCase())}</button><button class="btn green" data-act="swapgo" ${c.id === cur.id ? 'disabled' : ''}>BECOME ${esc(c.name.toUpperCase())}</button></div>`);
+    <div class="grid2" style="position:sticky; bottom:0; background:var(--night); padding:8px 0"><button class="btn grey" data-act="swapkeep">KEEP ${esc(cur.name.toUpperCase())}</button>${c.id === cur.id ? '<button class="btn" disabled>TAP A CLASS ABOVE</button>' : `<button class="btn green" data-act="swapgo">BECOME ${esc(c.name.toUpperCase())}</button>`}</div>`);
 }
 function finishClassSwap(id) {
   const old = cls();
@@ -1565,7 +1565,7 @@ function finishClassSwap(id) {
   save();
 }
 Object.assign(overlayHandlers, {
-  swappick: (_, b) => { swapPick = b.dataset.id; const y = overlay.scrollTop; showClassSwap(); overlay.scrollTop = y; },
+  swappick: (_, b) => { swapPick = b.dataset.id; showClassSwap(); },
   swapkeep: () => finishClassSwap(null),
   swapgo: () => finishClassSwap(swapPick),
 });
@@ -2996,7 +2996,7 @@ async function castMoveInner(id, e, s, isClass, def) {
       }
       case 'barrier': {
         const sh = Math.round((10 + s.mag * 1.5) * (B.movePow || 1));
-        B.shield = (B.shield || 0) + sh;
+        B.shield = Math.min((B.shield || 0) + sh, sh * 2); // stacks up to two casts
         burst(HERO_C.x, HERO_C.y, 'shield', '#e8dcc0'); popHero('+' + sh + ' SHIELD', '#e8dcc0');
         say(`You wrap up tight. Your shield soaks the next <b>${B.shield}</b> damage.`);
         break;
@@ -3093,7 +3093,7 @@ async function enemyAct(e) {
   if (e.intent === 'fare' && e.bossType === 'towtruck') {
     say(`${esc(e.full)} uses <b>Hook and Drag</b>!`);
     await fly({ x: eb.cx, y: eb.cy }, HERO_C, 'bar', '#8b84a3', 420);
-    const d = Math.max(1, Math.round(e.atk * 0.8 * fd().defK / (fd().defK + Math.max(0, heroDef()))));
+    const d = soakShield(Math.max(1, Math.round(e.atk * 0.8 * fd().defK / (fd().defK + Math.max(0, heroDef())))));
     G.hp -= d; flashHp(); popHero('-' + d, '#ff5fa2');
     if (B.noStun > 0) say(`You take <b>${d}</b> damage, but you slip the hook.`);
     else { B.stun = 1; say(`You take <b>${d}</b> damage and get hooked! You lose your next turn.`); }
@@ -3102,7 +3102,7 @@ async function enemyAct(e) {
   if (e.intent === 'fare' && e.bossType === 'metermaid') {
     say(`${esc(e.full)} uses <b>Boot Clamp</b>!`);
     await fly({ x: eb.cx, y: eb.cy }, HERO_C, 'tickets', '#4fd8e8', 380);
-    const d = Math.max(1, Math.round(e.atk * 0.5 * fd().defK / (fd().defK + Math.max(0, heroDef()))));
+    const d = soakShield(Math.max(1, Math.round(e.atk * 0.5 * fd().defK / (fd().defK + Math.max(0, heroDef())))));
     G.hp -= d; flashHp(); popHero('-' + d, '#ff5fa2');
     const cut = Math.round(3 * fsize());
     B.buff.def = (B.buff.def || 0) - cut;
