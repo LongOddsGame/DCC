@@ -2394,6 +2394,7 @@ function openBox(id) {
 function openAllBoxes() {
   if (!inSafe()) return;
   const all = [];
+  const start = boxCount(); // the number the button showed
   let tokens = 0, opened = 0;
   // Boxes can hold more boxes, so keep going until none are left.
   for (let guard = 0; guard < 200; guard++) {
@@ -2403,11 +2404,15 @@ function openAllBoxes() {
     all.push(...loot.items.filter(([iid]) => ITEMS[iid].type !== 'box'));
     tokens += loot.tokens; opened++;
   }
-  say(`Opened <span class="loot">${opened} loot boxes</span>!`);
+  // Boxes found inside boxes (or won mid-unboxing) get opened too, so say so
+  // instead of showing a bigger number than the button promised.
+  const bonus = Math.max(0, opened - start);
+  const bonusTxt = bonus ? ` Plus ${bonus} more found inside them!` : '';
+  say(`Opened <span class="loot">${Math.min(opened, start)} loot box${start === 1 ? '' : 'es'}</span>!${bonusTxt}`);
   bookie(opened >= 5 ? 'Look at that haul. The Patrons are jealous, and they own islands.' : 'Unboxing on live TV. Classic content.');
   updateHud();
   renderBag(`<div class="reveal"><div class="box-big"><img src="${icon('box_gold')}" alt=""></div>
-    <p class="banner gold">${opened} BOXES OPENED!</p>${lootRows(all)}
+    <p class="banner gold">${Math.min(opened, start)} BOX${start === 1 ? '' : 'ES'} OPENED!</p>${bonus ? `<p class="muted" style="margin:0">+${bonus} bonus box${bonus > 1 ? 'es' : ''} found inside, opened too.</p>` : ''}${lootRows(all)}
     <div class="item"><div class="txt"><span class="nm" style="color:var(--gold)">${tokens} tokens</span></div></div></div>`);
   saveSoon();
 }
