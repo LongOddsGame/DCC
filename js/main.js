@@ -372,13 +372,19 @@ function updateHud() {
 }
 
 // ---------- Screens (overlay) ----------
-function showOverlay(html) {
+// keep: a screen name. Redrawing the same screen (a tap on a button, tab or fold) keeps your place in the list
+// instead of jumping back to the top. A different screen, or none, starts at the top.
+function showOverlay(html, keep = '') {
+  const scroll = keep && !overlay.hidden && overlay.dataset.keep === keep ? overlay.scrollTop : 0;
   overlay.innerHTML = html;
   overlay.hidden = false;
+  overlay.dataset.keep = keep;
   $('boxpop').hidden = true;
-  overlay.scrollTop = 0;
+  overlay.scrollTop = scroll;
 }
-function hideOverlay() { overlay.hidden = true; overlay.innerHTML = ''; if (typeof updateBoxPop === 'function') updateBoxPop(); }
+// A note pinned just above the screen's bottom button, so it shows wherever you are in the list.
+function toastHtml(extra) { return extra ? `<div class="shop-toast">${extra}</div>` : ''; }
+function hideOverlay() { overlay.hidden = true; overlay.innerHTML = ''; overlay.dataset.keep = ''; if (typeof updateBoxPop === 'function') updateBoxPop(); }
 
 const TRASH = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"></path></svg>';
 
@@ -1504,10 +1510,10 @@ function renderUpgrade(extra = '') {
   showOverlay(`
     <div class="row-between"><h2>WORKBENCH</h2><span class="tok">${G.tokens} tokens</span></div>
     ${benchTabs()}
-    ${extra}
     <p class="muted" style="font-size:15px">Make your gear stronger. Each upgrade adds 10% to every stat on the item. On Floor ${G.floor} you can go up to +${upgCap()}; deeper floors allow more, up to +${UPG_MAX}. Scrap can fill in for up to half the materials. Upgrades apply to every copy of that item you own.</p>
     <div class="items">${rows}</div>
-    <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
+    ${toastHtml(extra)}
+    <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`, 'bench');
 }
 // Enchant tab: pick a piece of gear, then pick an enchantment. A new one replaces the old one.
 let enchPick = null;
@@ -1545,14 +1551,14 @@ function renderEnchant(extra = '') {
   showOverlay(`
     <div class="row-between"><h2>WORKBENCH</h2><span class="tok">${count('j_dust')} Dust · ${G.tokens} tokens</span></div>
     ${benchTabs()}
-    ${extra}
     <p class="muted" style="font-size:15px">Enchant your gear with <b style="color:var(--cyan)">Glow Dust</b> (mobs, boxes, Penny, and breaking down silver or better gear). Each piece holds one enchantment, on every copy you own. Enchantments are stronger on deeper floors, so re-enchant as you go down.</p>
     ${body}
-    <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
+    ${toastHtml(extra)}
+    <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`, 'bench');
 }
 Object.assign(overlayHandlers, {
   enchpick: (_, b) => { enchPick = b.dataset.id; renderEnchant(); overlay.scrollTop = 0; },
-  enchback: () => { enchPick = null; renderEnchant(); },
+  enchback: () => { enchPick = null; renderEnchant(); overlay.scrollTop = 0; },
   enchant: (_, b) => {
     const id = enchPick, eid = b.dataset.id;
     if (!id || !ENCHANTS[eid] || ENCHANTS[eid].floor > Math.max(1, G.floor || 1) || !canEnchant()) return;
@@ -1596,13 +1602,11 @@ function renderMovePick(extra = '') {
     <div class="items">${rows}</div>
     ${extra ? `<div class="shop-toast">${extra}</div>` : ''}
     <button class="btn grey" data-act="moveback">BACK</button>
-    <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
-  overlay.scrollTop = 0;
+    <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`, 'benchmove');
 }
 function renderSalvage(extra = '') {
   if (movePick && canMoveFrom(movePick)) return renderMovePick(extra);
   movePick = null;
-  const scroll = overlay.hidden ? 0 : overlay.scrollTop;
   const ids = G.order.filter((id) => isGear(id) && spareCopies(id) > 0).sort((a, b) => (boundCount(b) > 0) - (boundCount(a) > 0) || isJunk(b) - isJunk(a) || gearScore(a) - gearScore(b));
   const rows = ids.map((id) => {
     const it = ITEMS[id], n = spareCopies(id), y = scrapFor(id);
@@ -1619,8 +1623,7 @@ function renderSalvage(extra = '') {
     <p class="muted" style="font-size:15px">Break spare gear down into <b style="color:var(--gold)">Scrap</b>. On the Upgrade tab, Scrap fills in for up to half of the materials an upgrade needs. Rarer gear gives more: common 1, rusty 2, silver 3, gold 5, patron 8, plus 1 per upgrade level. Silver and better gear also gives <b style="color:var(--cyan)">Glow Dust</b> for enchanting. Replaced an upgraded piece? Tap <b style="color:var(--gold)">Move</b> to break it down and pass its upgrades and enchantment to your new gear of the same kind.</p>
     <div class="items">${rows}</div>
     ${extra ? `<div class="shop-toast">${extra}</div>` : ''}
-    <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
-  overlay.scrollTop = scroll;
+    <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`, 'bench');
 }
 function renderBench(extra = '') {
   if (benchTab === 'upgrade') return renderUpgrade(extra);
@@ -1653,10 +1656,10 @@ function renderBench(extra = '') {
     <div class="row-between"><h2>WORKBENCH</h2><span class="muted" style="font-size:14px">${ready} ready to make</span></div>
     ${benchTabs()}
     ${typeTabs}
-    ${extra}
     <p class="muted" style="font-size:15px">Mobs drop crafting materials. Bash them together into gear, potions and bombs. New recipes unlock as you level up.${hasPerk('tinkerer') ? ' Tinkerer: every recipe needs one less material.' : ''}</p>
     <div class="items">${rows || '<p class="muted">No recipes of this type yet.</p>'}</div>
-    <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
+    ${toastHtml(extra)}
+    <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`, 'bench');
 }
 Object.assign(overlayHandlers, {
   craft: (_, b) => {
@@ -1681,8 +1684,8 @@ Object.assign(overlayHandlers, {
     save();
     renderSalvage(`<p class="note good">${esc(itemName(to))}: ${esc(statText(to))}${p.scrap ? ` · +${p.scrap} Scrap` : ''}${p.dust ? ` · +${p.dust} Glow Dust` : ''}</p>`);
   },
-  benchtab: (_, b) => { benchTab = b.dataset.id; enchPick = null; movePick = null; hideOverlay(); renderBench(); },
-  crafttype: (_, b) => { craftType = b.dataset.id; hideOverlay(); renderBench(); },
+  benchtab: (_, b) => { benchTab = b.dataset.id; enchPick = null; movePick = null; renderBench(); },
+  crafttype: (_, b) => { craftType = b.dataset.id; renderBench(); },
   salvage: (_, b) => {
     const id = b.dataset.id;
     const spare = spareCopies(id);
@@ -3002,7 +3005,13 @@ function renderBattleControls() {
   }
   // The mob list only shows on the main menu screens, so action lists always have room.
   const showFoes = ['menu', 'busy', 'end'].includes(B.phase);
+  // Folding a move group (or anything else that redraws the same list) keeps your place in the list.
+  const oldOpts = controls.querySelector('.opts');
+  const optScroll = oldOpts && controls.dataset.phase === B.phase ? oldOpts.scrollTop : 0;
   controls.innerHTML = (showFoes ? foes : '') + btns;
+  controls.dataset.phase = B.phase;
+  const newOpts = controls.querySelector('.opts');
+  if (newOpts) newOpts.scrollTop = optScroll;
   // Picking a move hides the text box so more choices fit on screen.
   textbox.classList.toggle('picking', ['fight', 'target', 'items'].includes(B.phase));
 }
@@ -3915,12 +3924,12 @@ function renderQuestGiver() {
   showOverlay(`
     <div class="row-between"><h2>${g.board ? 'JOB BOARD' : esc(npc.name).toUpperCase()}</h2><span class="muted" style="font-size:14px">Floor ${G.floor} quests ${floorQuests().filter((q) => questDoneIds().includes(q.id)).length}/${floorQuests().length}</span></div>
     <div class="bookie quest-npc"><img src="${face.toDataURL()}" alt=""><p><b style="color:var(--gold)">${g.board ? `${esc(npc.name)}'s notes` : `${esc(npc.name)}, ${esc(npc.title)}`}:</b> ${esc(line)}</p></div>
-    ${qTalk.note}
     ${ready.length ? foldSec('qg_ready', 'Ready to turn in', ready.length, ready.map((q) => questRowHtml(q, 'turnin')).join(''), { color: 'gold', screen: 'qgiver' }) : ''}
     ${offer.length ? foldSec('qg_new', 'New quests', offer.length, `${offer.length > 1 ? `<button class="btn green" data-act="qacceptall">ACCEPT ALL ${offer.length}</button>` : ''}${offer.map((q) => questRowHtml(q, 'accept')).join('')}`, { color: 'green', screen: 'qgiver' }) : ''}
     ${mine.length ? foldSec('qg_mine', 'In progress', mine.length, mine.map((q) => questRowHtml(q, '')).join(''), { screen: 'qgiver' }) : ''}
     ${!ready.length && !offer.length && !mine.length ? `<p class="muted">Nothing new right now. ${g.stage < 3 ? 'More quests wait in the next stage\'s safe room.' : 'Go finish those bosses.'}</p>` : ''}
-    <button class="btn grey" data-act="qclose" style="position:sticky; bottom:0">LEAVE</button>`);
+    ${toastHtml(qTalk.note)}
+    <button class="btn grey" data-act="qclose" style="position:sticky; bottom:0">LEAVE</button>`, 'qgiver');
 }
 
 // ----- The quest log (Quests button) -----
@@ -3950,13 +3959,13 @@ function renderQuestLog(extra = '') {
   showOverlay(`
     <div class="row-between"><h2>QUESTS</h2><span class="muted" style="font-size:14px">Floor ${G.floor}</span></div>
     ${fq.length ? `<div class="qfloor"><span>${done.length}/${fq.length} done</span><div class="qbar"><div style="width:${Math.round(100 * done.length / fq.length)}%"></div></div></div>` : ''}
-    ${extra}
     ${FL.tutorial || !fq.length ? '<p class="muted">No quests here.</p>' : ''}
     ${ready.length ? F('ready', 'Ready to turn in', ready.length, `<p class="note-sm">Turn these in with any quest giver or job board in a safe room.</p>${ready.map((q) => questRowHtml(q, 'drop')).join('')}`, { color: 'gold' }) : ''}
     ${F('going', 'In progress', going.length, going.length ? going.map((q) => questRowHtml(q, 'drop')).join('') : `<p class="note-sm">${ready.length ? 'Nothing else in progress.' : 'No quests in progress. Look for a gold ! over someone in a safe room.'}</p>`)}
     ${fresh.length ? F('fresh', 'Not picked up yet', fresh.length, freshHtml, { shutByDefault: true, sub: 'Talk to these people in safe rooms' }) : ''}
     ${done.length ? F('done', 'Completed', done.length, doneHtml, { color: 'green', shutByDefault: true }) : ''}
-    <button class="btn grey" data-act="qlogclose" style="position:sticky; bottom:0">CLOSE</button>`);
+    ${toastHtml(extra)}
+    <button class="btn grey" data-act="qlogclose" style="position:sticky; bottom:0">CLOSE</button>`, 'qlog');
 }
 
 Object.assign(overlayHandlers, {
