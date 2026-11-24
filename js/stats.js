@@ -78,7 +78,6 @@ function heroText(h) {
   if (h.lvl > (st.lvl || h.lvl)) did.push(`went from level ${st.lvl} to ${h.lvl}`);
   if (h.floor > (st.floor ?? h.floor)) did.push(`went from ${st.floor === 0 ? 'the tutorial' : 'floor ' + st.floor} to floor ${h.floor}`);
   if (d('kills')) did.push(`killed ${d('kills')} mobs`);
-  if (d('spared')) did.push(`spared ${d('spared')}`);
   if (d('boxes')) did.push(`opened ${d('boxes')} loot boxes`);
   if (d('deaths')) did.push(`died ${d('deaths')} time${d('deaths') === 1 ? '' : 's'}`);
   const tok = (h.tokens || 0) - (st.tokens || 0);
@@ -88,7 +87,7 @@ function heroText(h) {
   return [
     `${h.name}: ${h.sex === 'f' ? 'female' : 'male'} ${h.race} ${h.cls}, former ${h.job}`,
     `Level ${h.lvl} · ${h.where} · ${h.status || ''} · HP ${h.hp}/${h.maxHp} · odds ${h.odds}`,
-    `${h.bosses || ''} · ${h.deaths} deaths, ${h.kills} kills, ${h.spared} spared overall`,
+    `${h.bosses || ''} · ${h.deaths} deaths, ${h.kills} kills overall`,
     `Played ${fmt(h.secs)} this time (${fmt(h.total)} total on this hero)`,
     `This time: ${did.length ? did.join(', ') : 'mostly exploring'}.`,
   ].join('\n');

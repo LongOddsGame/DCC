@@ -14,7 +14,7 @@ export const PERKS = {
   brainy: { name: 'Brainy', desc: '+6 max MP and +1 magic.', mods: { maxMp: 6, mag: 1 } },
   strong: { name: 'Strong Arms', desc: '+2 attack.', mods: { atk: 2 } },
   thick: { name: 'Thick Skin', desc: '+2 defense.', mods: { def: 2 } },
-  lucky: { name: 'Lucky', desc: '+3 luck: more crits and more mercy.', mods: { luck: 3 } },
+  lucky: { name: 'Lucky', desc: '+3 luck: more crits and luckier gambles.', mods: { luck: 3 } },
   nimble: { name: 'Nimble', desc: '+2 speed: run away more easily.', mods: { spd: 2 } },
   haggler: { name: 'Haggler', desc: 'Shop prices are 15% lower.' },
   salesman: { name: 'Salesman', desc: 'Items sell for 50% more.' },
@@ -98,8 +98,8 @@ export const CLASSES = [
     skill: { name: 'Hex Bolt', mp: 4, desc: 'Magic damage that ignores armor.', target: 'one', kind: 'bolt', color: '#c49af0' } },
   { id: 'scrapper', name: 'Scrapper', desc: 'Builds bombs from junk. Starts with 3 bombs.', mods: { luck: 2 }, odds: 2, coat: '#b8693a', coatLight: '#f5c542', cannot: ['heal', 'ice'],
     skill: { name: 'Shrapnel', mp: 4, desc: 'Hit every mob at once.', target: 'all', kind: 'shrapnel' } },
-  { id: 'talker', name: 'Smooth Talker', desc: 'Talks mobs down and gets better deals.', mods: { luck: 2, def: 1, cha: 4 }, odds: 4, coat: '#3a6ea5', coatLight: '#6aa0d8', cannot: ['fire', 'blood'], haggle: true,
-    skill: { name: 'Talk Down', mp: 3, desc: 'Convince one mob to walk away.', target: 'one', kind: 'talk' } },
+  { id: 'talker', name: 'Smooth Talker', desc: 'Rattles mobs with words and gets better deals.', mods: { luck: 2, def: 1, cha: 4 }, odds: 4, coat: '#3a6ea5', coatLight: '#6aa0d8', cannot: ['fire', 'blood'], haggle: true,
+    skill: { name: 'Talk Down', mp: 3, desc: 'Rattle one mob: it loses its next turn and takes 30% more damage.', target: 'one', kind: 'talk' } },
   { id: 'showboat', name: 'Showboat', desc: 'Wins over the audience for bigger gifts.', mods: { spd: 1, cha: 3 }, odds: 3, coat: '#f5c542', coatLight: '#fff6e0', cannot: ['poison'], hypeUp: true,
     skill: { name: 'Showstopper', mp: 3, desc: 'A flashy hit worth 2 hype.', target: 'one', kind: 'flashy' } },
   { id: 'medic', name: 'Field Medic', desc: 'Keeps themself alive no matter what.', mods: { maxHp: 6, maxMp: 6, mag: 1 }, odds: 3, coat: '#e8dcc0', coatLight: '#fff6e0', cannot: ['blood', 'poison', 'fire'],
@@ -150,7 +150,7 @@ export const CLASSES = [
   { id: 'bees', name: 'Rooftop Beekeeper', desc: 'Brought the bees. The bees are not happy.', mods: { mag: 2, maxHp: 4, def: 1 }, odds: 5, coat: '#fff6e0', coatLight: '#f5c542', cannot: ['fire'], magic: true,
     skill: { name: 'Angry Swarm', mp: 3, desc: 'Damage and poison one mob.', target: 'one', kind: 'poison' } },
   { id: 'mime', name: 'Street Mime', desc: 'Never says a word. Somehow very persuasive.', mods: { cha: 3, spd: 1, luck: 1 }, odds: 5, coat: '#1a1426', coatLight: '#fff6e0', cannot: ['storm', 'fire'],
-    skill: { name: 'Silent Treatment', mp: 3, desc: 'Convince one mob to walk away.', target: 'one', kind: 'talk' } },
+    skill: { name: 'Silent Treatment', mp: 3, desc: 'Rattle one mob: it loses its next turn and takes 30% more damage.', target: 'one', kind: 'talk' } },
   { id: 'sparky', name: 'Rogue Electrician', desc: 'Not licensed. Very confident.', mods: { mag: 3, def: 1 }, odds: 5, coat: '#f5c542', coatLight: '#3a6ea5', cannot: ['ice', 'heal'], magic: true,
     skill: { name: 'Live Wire', mp: 4, desc: 'Lightning that ignores armor.', target: 'one', kind: 'bolt', color: '#f5c542' } },
   { id: 'icecream', name: 'Ice Cream Driver', desc: 'The jingle means danger now.', mods: { mag: 2, maxMp: 4, cha: 1 }, odds: 5, coat: '#ff5fa2', coatLight: '#4fd8e8', cannot: ['fire', 'blood'], magic: true,
@@ -431,7 +431,7 @@ export const MOVES = {
 export const TRAITS = {
   armored: { name: 'Armored', desc: '+3 defense' },
   explosive: { name: 'Explosive', desc: 'Explodes when it dies' },
-  cowardly: { name: 'Cowardly', desc: 'Begs for mercy when hurt' },
+  cowardly: { name: 'Cowardly', desc: 'Cowers and loses a turn when hurt' },
   greedy: { name: 'Greedy', desc: 'Steals items' },
   famous: { name: 'Famous', desc: 'The audience loves seeing it lose' },
   fast: { name: 'Fast', desc: 'Sometimes acts twice' },
@@ -440,7 +440,7 @@ export const TRAITS = {
 
 export const FLOOR_RULES = [
   { id: 'doubleloot', name: 'Double Loot', text: 'Every chest holds twice the loot. Greed is good TV.' },
-  { id: 'cowards', name: 'Cowards Night', text: 'Every mob begs for mercy when hurt. Will you show any?' },
+  { id: 'cowards', name: 'Cowards Night', text: 'Every mob begs for mercy when hurt. Nobody is listening, but they lose a turn groveling.' },
   { id: 'hypefest', name: 'Hype Fest', text: 'The audience is hyped. Hype builds twice as fast.' },
   { id: 'happyhour', name: 'Happy Hour', text: 'Penny is running a special. Everything in her shop is 25% off.' },
   { id: 'allyoucaneat', name: 'All You Can Eat', text: 'Food heals twice as much on this floor. Dig in.' },
@@ -479,7 +479,6 @@ export function floorDef(n) { return FLOORS[Math.max(1, Math.min(LAST_FLOOR, n |
 
 export const ACHIEVEMENTS = {
   firstblood: { name: 'First Blood', text: 'You killed something. The audience claps politely.', reward: 'box_rusty' },
-  mercy: { name: 'Mercy Rule', text: 'You let a mob live. Some viewers booed. Some cried.', reward: 'box_rusty' },
   death: { name: 'Welcome to the Show', text: 'You died! Do not worry, we kept the tape.', reward: 'box_rusty' },
   boxaddict: { name: 'Box Addict', text: 'You opened 5 loot boxes. You might have a problem.', reward: 'box_silver' },
   ratings: { name: 'Ratings Gold', text: 'You took down a Famous mob on live TV.', reward: 'box_silver' },
@@ -502,8 +501,6 @@ export const BOOKIE = {
   win: ['Clean. The Patrons barely spilled their champagne.', 'A win! Your odds just got a little less insulting.', 'The crowd goes mild!', 'Somebody up on the arks just won a bet on you.'],
   lowWin: ['That was close. The audience LOVED it.', 'Barely alive. Peak television.'],
   hurt: ['Ooh, that one is going in the highlight reel.', 'Ouch. The Patrons are re-running that in slow motion.'],
-  spare: ['You spared it. Touching. Boring, but touching.', 'Mercy! Half the audience is crying, the other half wants a refund.'],
-  finish: ['Cold. The Patrons respect cold.', 'No mercy! The ratings spike.'],
   chest: ['A loot box! The sweetest sound in the apocalypse.', 'Shiny! Go on, open it.'],
   timer: ['Five minutes left on the floor. Tick tock.', 'One minute! The floor is getting crumbly.'],
   death: ['And you are dead! Classic. Let us rewind.', 'That was a death. Your odds just got worse. Much worse.'],

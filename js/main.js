@@ -195,7 +195,6 @@ function achieve(id) {
 
 // Doc Vance's values decide how each kind of action changes how she feels about you.
 const DOC_VALUES = {
-  merciful: { trust: 6, respect: 1 },
   cruel: { trust: -5, fear: 4 },
   generous: { trust: 10, owed: 1 },
   greedy: { trust: -6 },
@@ -203,7 +202,6 @@ const DOC_VALUES = {
   creepy: { fear: 2 },
 };
 const TAG_RUMORS = {
-  merciful: 'I heard you let a mob walk away. People are talking about it down here.',
   cruel: 'Word is you finished off something that was begging. People talk, you know.',
   generous: 'Jules is walking again because of you. I won\'t forget that.',
   greedy: 'You let Jules bleed to keep a potion. I remember faces.',
@@ -2568,7 +2566,7 @@ function openMenu(force = false) {
       <span>Magic <b>${s.mag}</b></span><span>Speed <b>${s.spd}</b></span>
       <span>Charisma <b>${s.cha}</b></span><span>Luck <b>${s.luck}</b></span>
       <span>Odds <b>${oddsText()}</b></span><span>Deaths <b>${G.deaths}</b></span>
-      <span>Kills <b>${G.kills}</b></span><span>Spared <b>${G.spared}</b></span>
+      <span>Kills <b>${G.kills}</b></span>
     </div>
     <button class="btn gold" data-act="sheet">CHARACTER SHEET (STR, INT, CHA...)</button>
     <p><b>Moves:</b> ${esc(moves)}</p>
@@ -2592,7 +2590,7 @@ const SHEET = [
   ['mag', 'Intelligence', 'MAG', 'Power of spells, magic skills, poison and healing.'],
   ['maxMp', 'Focus', 'Max MP', 'Mana for class skills and spells.'],
   ['spd', 'Agility', 'SPD', 'Better odds of running away from fights.'],
-  ['luck', 'Luck', 'LUCK', 'Critical hits, and talking mobs down.'],
+  ['luck', 'Luck', 'LUCK', 'Critical hits and luckier gamble moves.'],
   ['cha', 'Charisma', 'CHA', 'Cheaper shops, more hype from the crowd, mobs beg sooner, and people trust you faster.'],
   ['xpPct', 'Fast Learner', 'XP%', 'Bonus experience from every fight.'],
 ];
@@ -2713,7 +2711,7 @@ function rollIntent(e) {
 }
 function hurtFriend(e) { return B.enemies.filter((x) => x.alive && x !== e && x.hp < x.maxHp * 0.45).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0]; }
 function intentText(e) {
-  if (!e.alive) return e.spared ? 'Spared' : 'Down';
+  if (!e.alive) return 'Down';
   if (e.frozen > 0) return 'Frozen';
   const a = ATTACKS[e.atkKey] || ATTACKS.rat;
   if (e.intent === 'attack') return 'Next: ' + a.name;
@@ -2745,7 +2743,7 @@ function moveEstimate(kind) {
     bolt: () => ({ dmg: M * 1.1 }),
     flashy: () => ({ dmg: hit(P * 1.3 - d) }),
     shrapnel: () => ({ dmg: hit(P * 0.35 + M * 0.35 - d / 2), all: true }),
-    talk: () => ({ util: 'TALK' }),
+    talk: () => ({ util: 'RATTLE' }),
     heal: () => ({ util: '+' + Math.round(15 + m * 1.2) + ' HP' }),
     stun: () => ({ dmg: hit(P * 0.9 - d) }),
     steal: () => ({ dmg: hit(P * 1.1 - d) }),
@@ -2811,7 +2809,7 @@ function fightOptions() {
   free.sort((x, y) => total(y) - total(x));
   items.sort((x, y) => total(y) - total(x));
   mana.sort((x, y) => total(y) - total(x));
-  return [...free, ...items, ...mana];
+  return [...mana, ...free, ...items];
 }
 function fightOptHtml(o) {
   const big = o.util != null && !o.dmg
@@ -2833,24 +2831,25 @@ function renderBattleControls() {
       <button class="btn grey" data-b="run" ${B.enemies.some((e) => e.boss) ? 'disabled' : ''}>RUN</button></div>`;
   } else if (B.phase === 'fight') {
     const opts = fightOptions();
-    // Three sections: melee (free), item moves that use something up, and mana moves.
+    // Three sections, mana moves first (owner request): mana moves, free melee moves, and item moves that use something up.
+    // Tap a section's header to fold it shut or open it again. The choice is saved with the hero.
     const melee = opts.filter((o) => !o.mp && !o.item), itemMoves = opts.filter((o) => o.item), mana = opts.filter((o) => o.mp);
-    const sec = (head, list, empty) => `<div class="opt-head">${head}</div>` + (list.length ? list.map(fightOptHtml).join('') : `<p class="muted opt-empty">${empty}</p>`);
-    btns = `<div class="stack opts">${sec('MELEE · no mana', melee, '')}${sec('ITEM MOVES · uses one up', itemMoves, 'No bombs or throwables in your bag.')}${sec(`MANA MOVES · you have ${G.mp} MP`, mana, 'No mana moves yet.')}</div><button class="btn grey" data-b="back">BACK</button>`;
+    const shut = G.shutMoveSecs || {};
+    const sec = (key, head, list, empty) => `<button class="opt-head" data-b="sec" data-arg="${key}"><span><span class="opt-arrow">${shut[key] ? '▶' : '▼'}</span> ${head}</span><span>${list.length}</span></button>`
+      + (shut[key] ? '' : list.length ? list.map(fightOptHtml).join('') : empty ? `<p class="muted opt-empty">${empty}</p>` : '');
+    btns = `<div class="stack opts">${sec('mana', `MANA MOVES · you have ${G.mp} MP`, mana, 'No mana moves yet.')}${sec('melee', 'FREE MOVES · no mana', melee, '')}${sec('item', 'ITEM MOVES · uses one up', itemMoves, 'No bombs or throwables in your bag.')}</div><button class="btn grey" data-b="back">BACK</button>`;
   } else if (B.phase === 'target') {
     btns = `<p class="muted" style="margin:0">Who gets the ${esc(B.pendingLabel)}?</p><div class="stack opts">${alive().map((e) => `<button class="btn red text" data-b="target" data-arg="${e.id}">${esc(e.full)} (${e.hp} HP)</button>`).join('')}</div><button class="btn grey" data-b="back">BACK</button>`;
   } else if (B.phase === 'items') {
     const usable = G.order.filter((id) => count(id) > 0 && ['potion', 'food'].includes(ITEMS[id].type)).sort((a, b) => itemGroup(a) - itemGroup(b) || itemPower(b) - itemPower(a));
     btns = `<div class="stack opts">${usable.map((id) => { const w = potionWait(id); return `<button class="btn green text" data-b="use" data-arg="${id}" ${w ? 'disabled' : ''}>${G.favs[id] ? '★ ' : ''}${ITEMS[id].type === 'food' ? 'EAT' : 'DRINK'} ${esc(ITEMS[id].name)} x${count(id)}${w ? ` (${w})` : ''}</button>`; }).join('') || '<p class="muted">No potions or food. Bombs are under Attack.</p>'}</div><button class="btn grey" data-b="back">BACK</button>`;
-  } else if (B.phase === 'mercy') {
-    btns = `<div class="grid2"><button class="btn green" data-b="spare">SPARE IT</button><button class="btn red" data-b="finish">FINISH IT</button></div>`;
   } else if (B.phase === 'busy') {
     btns = '<div class="grid2"><button class="btn grey" disabled>...</button><button class="btn grey" disabled>...</button></div>';
   } else if (B.phase === 'end') {
     btns = '<button class="btn green" data-b="continue">CONTINUE</button>';
   }
   // The mob list only shows on the main menu screens, so action lists always have room.
-  const showFoes = ['menu', 'mercy', 'busy', 'end'].includes(B.phase);
+  const showFoes = ['menu', 'busy', 'end'].includes(B.phase);
   controls.innerHTML = (showFoes ? foes : '') + btns;
   // Picking a move hides the text box so more choices fit on screen.
   textbox.classList.toggle('picking', ['fight', 'target', 'items'].includes(B.phase));
@@ -2863,6 +2862,12 @@ function battleInput(cmd, arg) {
   if (B.phase === 'busy') return;
   if (cmd === 'fight') { B.phase = 'fight'; return renderBattleControls(); }
   if (cmd === 'items') { B.phase = 'items'; return renderBattleControls(); }
+  if (cmd === 'sec') {
+    G.shutMoveSecs = G.shutMoveSecs || {};
+    G.shutMoveSecs[arg] = !G.shutMoveSecs[arg];
+    save();
+    return renderBattleControls();
+  }
   if (cmd === 'act') {
     const o = fightOptions().find((x) => x.id === arg);
     if (!o) return;
@@ -2877,7 +2882,6 @@ function battleInput(cmd, arg) {
   if (cmd === 'use') { if (potionWait(arg)) return; return doPlayer('use:' + arg, null); }
   if (cmd === 'guard') return doPlayer('guard', null);
   if (cmd === 'run') return doPlayer('run', null);
-  if (cmd === 'spare' || cmd === 'finish') return resolveMercy(cmd);
 }
 
 // ----- Battle effects -----
@@ -2931,9 +2935,8 @@ function splitBlob(boss, kind = 'leftover') {
   }
   say(kind === 'drone' ? `${esc(boss.full)} radios for backup! <b>Ticket Drones</b> join the fight.` : `${esc(boss.full)} splits! <b>Leftover Blobs</b> join the fight.`);
 }
-function killEnemy(e, how = 'kill') {
+function killEnemy(e) {
   e.alive = false; e.hp = 0;
-  if (how === 'spare') { e.spared = true; return; }
   G.kills++;
   say(`${esc(e.full)} is defeated!`);
   if (!FL.tutorial) achieve('firstblood');
@@ -3083,9 +3086,11 @@ async function castMoveInner(id, e, s, isClass, def) {
       case 'flashy': burst(eb.cx, eb.cy, 'slash', '#f5c542'); await sleep(200); hitEnemy(e, (a() + 1) * 1.3 - e.def); addHype(2); break;
       case 'shrapnel': await allBoom('#b8693a'); for (const x of alive()) hitEnemy(x, ((a() + 1) * 0.35 + M() * 0.35) - x.def / 2); break;
       case 'talk': {
-        const p = (e.boss ? 0 : 0.45) + s.luck * 0.02 + chaBonus() * 0.02 + (e.hp < e.maxHp * 0.4 ? 0.3 : 0);
-        if (R.chance(p)) { say(`You talk ${esc(e.full)} into walking away.`); killEnemy(e, 'spare'); G.spared++; tag('merciful'); }
-        else say(`${esc(e.full)} is not listening.`);
+        // No more talking mobs into leaving (owner: no sparing). Now it rattles one mob:
+        // it loses its next turn (bosses shrug that part off) and takes 30% more damage for the rest of the fight.
+        burst(eb.cx, eb.cy, 'star', '#6aa0d8');
+        if (!e.boss) { e.frozen = 1; say(`${esc(e.full)} is rattled and loses its next turn!`); }
+        if (!e.marked) { e.marked = true; say(`${esc(e.full)} is shaken. Your hits on it do 30% more.`); }
         break;
       }
       case 'heal': healMe(15 + s.mag * 1.2); break;
@@ -3200,14 +3205,12 @@ async function enemyTurn() {
     await sleep(600);
     return enemyTurn();
   }
-  // Hurt cowardly mobs beg for their lives.
+  // Hurt cowardly mobs beg for their lives. There is no sparing (owner request): it just cowers and loses a turn.
   const beggar = alive().find((e) => !e.begged && !e.boss && e.traits.includes('cowardly') && e.hp <= e.maxHp * (0.35 + Math.max(0, chaBonus()) * 0.01));
   if (beggar) {
     beggar.begged = true;
-    B.mercyTarget = beggar.id;
-    B.phase = 'mercy';
-    say(`${esc(beggar.full)} drops to the ground and begs for its life!`);
-    return renderBattleControls();
+    beggar.frozen = Math.max(beggar.frozen || 0, 1);
+    say(`${esc(beggar.full)} drops to the ground and begs for its life! Nobody is listening. It cowers and loses a turn.`);
   }
   B.phase = 'menu';
   renderBattleControls();
@@ -3356,28 +3359,6 @@ async function enemyAct(e) {
   }
 }
 
-function resolveMercy(choice) {
-  const e = B.enemies.find((x) => x.id === B.mercyTarget);
-  if (choice === 'spare') {
-    say(`You let ${esc(e.full)} go. It scurries off.`);
-    bookie(R.pick(BOOKIE.spare));
-    killEnemy(e, 'spare');
-    G.spared++;
-    tag('merciful');
-    if (!FL.tutorial) achieve('mercy');
-  } else {
-    say(`You finish off ${esc(e.full)}.`);
-    bookie(R.pick(BOOKIE.finish));
-    killEnemy(e);
-    tag('cruel');
-    addHype(1);
-  }
-  updateHud();
-  if (checkEnd()) return;
-  B.phase = 'menu';
-  renderBattleControls();
-}
-
 function checkEnd() {
   if (G.hp <= 0) { G.hp = 0; updateHud(); setTimeout(() => die('You were knocked out on live TV.'), 700); B.phase = 'busy'; renderBattleControls(); return true; }
   if (alive().length) return false;
@@ -3407,7 +3388,6 @@ function victory() {
   const deep = G.floor >= 2 || G.lvl >= 5;
   for (const e of B.enemies) {
     const ex = e.xp * xpMult * (e.respawn ? 0.5 : 1);
-    if (e.spared) { xp += Math.floor(ex / 2); continue; }
     questEvent('kill', 1, { mob: e.type });
     xp += Math.max(1, Math.round(ex));
     tokens += R.int(e.tokens[0], e.tokens[1]);
@@ -3532,7 +3512,7 @@ function showFloorClear(note = '') {
     <div class="bookie"><img src="${sprite('bookie').toDataURL()}" alt=""><p><b style="color:var(--pink)">BOOKIE:</b> ${esc(G.name)} takes the stairs! Odds now ${oddsText()}. Somebody up there is getting rich.</p></div>
     <div class="stat-list">
       <span>Level <b>${G.lvl}</b></span><span>Time <b>${mins} min</b></span>
-      <span>Kills <b>${G.kills}</b></span><span>Spared <b>${G.spared}</b></span>
+      <span>Kills <b>${G.kills}</b></span>
       <span>Boxes opened <b>${G.boxesOpened}</b></span><span>Deaths <b>${G.deaths}</b></span>
     </div>
     <p>${esc(G.doc.met ? docEnd : 'You never met Doc. Maybe next time.')}</p>
