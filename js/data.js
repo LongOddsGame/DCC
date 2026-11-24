@@ -85,6 +85,22 @@ export const RACES = [
   { id: 'werewolf', name: 'Werewolf', desc: 'Wild. 20% chance your attack hits twice.', mods: { atk: 4, def: -1 }, odds: 15, skin: '#a08070', shade: '#5b3a29', hair: '#5a5373' },
   { id: 'ghoul', name: 'Ghoul', desc: 'Heal 4 health for every mob you defeat. People find you creepy.', mods: { maxHp: 4, cha: -3 }, odds: 22, skin: '#c9c3da', shade: '#8b84a3', hair: '#1a1426' },
   { id: 'pixie', name: 'Pixie-kin', desc: 'Trickster. 15% chance a mob attack hits another mob instead.', mods: { mag: 3, maxHp: -6, cha: 2 }, odds: 35, skin: '#e0c4f0', shade: '#c49af0', hair: '#8a4fc9' },
+  // ----- More races (owner asked for more). feat adds pixels to the hero sprite: [x, y, palette letter] per view. -----
+  { id: 'minotaur', name: 'Minotaur', desc: 'Charges in horns first. Your first weapon hit in every fight deals 50% more damage.', mods: { maxHp: 8, atk: 2, mag: -2, cha: -1 }, odds: 8, skin: '#8a4b2a', shade: '#5b3a29', hair: '#1a1426',
+    feat: { all: [[3, 2, 'e'], [2, 1, 'e'], [2, 0, 'e'], [12, 2, 'e'], [13, 1, 'e'], [13, 0, 'e']] } },
+  { id: 'catfolk', name: 'Catfolk', desc: 'Nine lives, more or less. Once per floor, a blow that would knock you out leaves you at 1 health.', mods: { spd: 2, luck: 2, maxHp: -4 }, odds: 18, skin: '#f5c542', shade: '#b8862b', hair: '#b8693a',
+    feat: { all: [[4, 0, 'h'], [4, 1, 'h'], [5, 1, 'n'], [11, 0, 'h'], [11, 1, 'h'], [10, 1, 'n']] } },
+  { id: 'golem', name: 'Clay Golem', desc: 'Baked hard. Mob hits deal 15% less damage, but potions heal 25% less.', mods: { def: 2, maxHp: 6, spd: -2, cha: -2 }, odds: 11, skin: '#b8693a', shade: '#8a4b2a', hair: '#8a4b2a',
+    feat: { down: [[6, 5, 'y'], [9, 5, 'y'], [8, 3, 'u'], [8, 4, 'u']], left: [[5, 5, 'y'], [7, 3, 'u']], up: [[7, 3, 'u'], [7, 4, 'u']] } },
+  { id: 'merfolk', name: 'Merfolk', desc: 'Built for water. Potions heal and restore MP 40% more. A bit slow on land.', mods: { maxMp: 6, mag: 2, spd: -2 }, odds: 14, skin: '#6aa0d8', shade: '#3a6ea5', hair: '#2f7a3c', over: { o: '#4fd8e8' },
+    feat: { down: [[2, 4, 'c'], [1, 4, 'c'], [2, 5, 'c'], [13, 4, 'c'], [14, 4, 'c'], [13, 5, 'c']], up: [[2, 4, 'c'], [1, 4, 'c'], [2, 5, 'c'], [13, 4, 'c'], [14, 4, 'c'], [13, 5, 'c']], left: [[13, 4, 'c'], [14, 4, 'c'], [13, 5, 'c']] } },
+  { id: 'imp', name: 'Imp', desc: 'A small devil with a big spark. Spells and class moves cost 1 less MP.', mods: { mag: 2, luck: 1, maxHp: -6, cha: -1 }, odds: 22, skin: '#ff8a8a', shade: '#c8334a', hair: '#1a1426',
+    feat: { all: [[4, 1, 'r'], [4, 0, 'r'], [11, 1, 'r'], [11, 0, 'r']] } },
+  { id: 'banshee', name: 'Banshee', desc: 'Wails as you strike. 15% chance your weapon hit stuns a mob for a turn.', mods: { mag: 2, spd: 1, maxHp: -4, cha: -2 }, odds: 24, skin: '#e8dcc0', shade: '#c9c3da', hair: '#fff6e0',
+    feat: { down: [[6, 5, 'c'], [9, 5, 'c']], left: [[5, 5, 'c']] } },
+  { id: 'centaur', name: 'Centaur', desc: 'Four fast hooves. Running away from a normal fight always works.', mods: { spd: 3, maxHp: 6, atk: 1, cha: -1 }, odds: 12, skin: '#e8a87c', shade: '#b8693a', hair: '#1a1426', over: { o: '#b8693a' } },
+  { id: 'mushroom', name: 'Mushroom Folk', desc: 'A walking toadstool. 20% chance your weapon hit poisons a mob. Spoiled food is just food to you.', mods: { maxHp: 6, luck: 1, spd: -1, cha: -2 }, odds: 18, skin: '#fff6e0', shade: '#e8dcc0', hair: '#c8334a',
+    feat: { all: [[2, 3, 'h'], [13, 3, 'h'], [2, 4, 'k'], [13, 4, 'k'], [6, 2, 'w'], [9, 2, 'w'], [4, 3, 'w'], [11, 3, 'w']] } },
 ];
 
 // Classes. skill.kind picks what the class skill does in battle (see castMove).

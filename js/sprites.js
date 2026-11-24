@@ -129,11 +129,23 @@ export function flipped(c) {
   if (!mirrorCache.has(c)) mirrorCache.set(c, mirror(c));
   return mirrorCache.get(c);
 }
+// Race features (horns, ears, fins, glowing eyes...) are extra pixels painted over the hero map.
+function withFeat(name, race, view) {
+  const px = race.feat && (race.feat[view] || race.feat.all);
+  if (!px) return name;
+  const key = name + '#' + race.id;
+  if (!MAPS[key]) {
+    const rows = MAPS[name].map((r) => r.split(''));
+    for (const [x, y, ch] of px) rows[y][x] = ch;
+    MAPS[key] = rows.map((r) => r.join(''));
+  }
+  return key;
+}
 // dir: down | up | left | right. frame: 0 standing, 1 and 2 mid-step.
 export function heroSprite(race, cls, dir = 'down', frame = 0, sex = 'm') {
-  const over = { s: race.skin, S: race.shade, h: race.hair || '#5b3a29', b: cls.coat, B: cls.coatLight };
+  const over = { ...(race.over || {}), s: race.skin, S: race.shade, h: race.hair || '#5b3a29', b: cls.coat, B: cls.coatLight };
   const base = dir === 'right' ? 'left' : dir;
-  const c = sprite((sex === 'f' ? 'heroF_' : 'hero_') + base + frame, over, race.id + cls.id);
+  const c = sprite(withFeat((sex === 'f' ? 'heroF_' : 'hero_') + base + frame, race, base), over, race.id + cls.id);
   return dir === 'right' ? flipped(c) : c;
 }
 
