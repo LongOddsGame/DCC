@@ -307,6 +307,7 @@ function loadSlot(i) {
   buildFloor();
   if (oldWorld || !G.pos || !walkable(FL, G.pos.x, G.pos.y)) G.pos = { ...FL.start };
   if ((G.upgV || 1) < 2) refundOverCap();
+  seedQuestHist();
   // Odds used to start near 20 to 1 and hit 1 to 1 by Floor 2. Move old saves onto the new 1000 to 1 scale.
   if ((G.oddsV || 1) < 2) {
     const start = oddsStart((byId(RACES, G.race) || { odds: 10 }).odds, (byId(CLASSES, G.cls) || { odds: 5 }).odds);
@@ -1199,6 +1200,26 @@ function pennyLine() {
     'Sell me your junk. I will sell it back to someone dumber. Not you. Probably.',
   ]);
 }
+// Fold-open sections (shop, quests). Tap a header to fold it shut or open it. Saved with the hero in G.folds.
+// shutByDefault: sections that start folded until the player opens them once.
+function foldSec(key, title, n, inner, { sub = '', color = '', shutByDefault = false, screen = '' } = {}) {
+  const f = (G.folds = G.folds || {});
+  const shut = key in f ? f[key] : shutByDefault;
+  return `<div class="fold"><button class="fold-head ${color}" data-act="fold" data-id="${key}" data-def="${shutByDefault ? 1 : 0}" data-r="${screen}">
+    <span class="fh-arrow">${shut ? '▶' : '▼'}</span><span class="fh-title">${title}${sub ? `<span class="fh-sub">${sub}</span>` : ''}</span><span class="fh-cnt">${n}</span></button>
+    ${shut ? '' : `<div class="fold-body">${inner}</div>`}</div>`;
+}
+const foldRedraw = { shop: () => renderShop(), qlog: () => renderQuestLog(), qgiver: () => renderQuestGiver() };
+Object.assign(overlayHandlers, {
+  fold: (_, b) => {
+    const f = (G.folds = G.folds || {});
+    const k = b.dataset.id;
+    f[k] = !(k in f ? f[k] : b.dataset.def === '1');
+    saveSoon();
+    (foldRedraw[b.dataset.r] || (() => {}))();
+  },
+});
+
 let shopState = { tab: 'buy', line: '' };
 function openShop() { shopState = { tab: 'buy', line: pennyLine() }; renderShop(); }
 function shopRow(id, special, bought) {
@@ -1206,16 +1227,29 @@ function shopRow(id, special, bought) {
   const p = priceOf(id);
   const gone = special && bought.includes(id);
   const worth = !gone && worthBuying(id);
-  return `<div class="item ${worth ? 'worth' : ''}"><img src="${icon(id)}" alt="">
+  const info = `<img src="${icon(id)}" alt="">
     <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(it.name)}${worth ? (isGear(id) ? ' <span class="badge up">UPGRADE</span>' : ' <span class="badge new">NEW MOVE</span>') : ''}${count(id) ? ` <span class="have">have ${count(id)}</span>` : ''}</span>
-    <span class="ds">${isGear(id) ? gearDescHtml(id) : esc(it.desc)}${it.type === 'box' ? ` <b style="color:var(--gold)">${boxLeft(id)} left until Penny restocks.</b>` : ''}</span></div>
-    ${special
-    ? `<button class="act gold" data-act="buy" data-id="${id}" data-sp="1" ${gone || G.tokens < p ? 'disabled' : ''}>${gone ? 'Sold out' : p + ' tokens'}</button>`
-    : (() => { const max = Math.min(Math.floor(G.tokens / p), boxLeft(id)); return `<div class="craft-btns">
+    <span class="ds">${isGear(id) ? gearDescHtml(id) : esc(it.desc)}${it.type === 'box' ? ` <b style="color:var(--gold)">${boxLeft(id)} left until Penny restocks.</b>` : ''}</span></div>`;
+  if (special) return `<div class="item srow one ${worth ? 'worth' : ''}">${info}
+    <button class="act gold" data-act="buy" data-id="${id}" data-sp="1" ${gone || G.tokens < p ? 'disabled' : ''}>${gone ? 'Sold out' : p + ' tokens'}</button></div>`;
+  const max = Math.min(Math.floor(G.tokens / p), boxLeft(id));
+  return `<div class="item srow">${info}<div class="sbtns">
       <button class="act gold" data-act="buy" data-id="${id}" data-n="1" ${max < 1 ? 'disabled' : ''}>Buy 1 · ${p}</button>
       <button class="act gold" data-act="buy" data-id="${id}" data-n="5" ${max < 5 ? 'disabled' : ''}>Buy 5 · ${p * 5}</button>
-      <button class="act gold" data-act="buy" data-id="${id}" data-n="max" ${max < 2 ? 'disabled' : ''}>Max${max >= 2 ? ' · ' + max : ''}</button></div>`; })()}</div>`;
+      <button class="act gold" data-act="buy" data-id="${id}" data-n="max" ${max < 2 ? 'disabled' : ''}>Max${max >= 2 ? ' · ' + max : ''}</button></div></div>`;
 }
+// Penny's shelves, in the order they show. Each one folds open and shut.
+const SHOP_CATS = [
+  ['heal', 'Healing and food', (it) => it.type === 'food' || (it.type === 'potion' && (it.heal || it.healPct))],
+  ['mana', 'Mana', (it) => it.type === 'potion' && it.mana],
+  ['potion', 'Other potions', (it) => it.type === 'potion'],
+  ['bomb', 'Bombs', (it) => it.type === 'bomb'],
+  ['box', 'Loot boxes', (it) => it.type === 'box'],
+  ['mat', 'Materials', (it) => !isGear(it.id) && !['scroll', 'potion', 'food', 'bomb', 'box'].includes(it.type)],
+  ['gear', 'Gear: one of each', (it) => isGear(it.id)],
+  ['scroll', 'Move scrolls: one of each', (it) => it.type === 'scroll'],
+];
+function shopCat(id) { const it = { ...ITEMS[id], id }; return SHOP_CATS.find(([, , f]) => f(it))[0]; }
 // Buying or selling keeps your place in the list; the result shows as a note pinned above LEAVE SHOP.
 // Penny only has 3 of each loot box per restock (she restocks on level up or a new floor).
 const BOX_STOCK = 3;
@@ -1228,45 +1262,57 @@ function renderShop(extra = '', keepScroll = true) {
   const scroll = keepScroll ? overlay.scrollTop : 0;
   const t = shopTier();
   const next = SHOP_TIERS[t + 1];
+  const F = (key, title, n, inner, o = {}) => foldSec('shop_' + key, title, n, inner, { ...o, screen: 'shop' });
   let body;
   if (shopState.tab === 'buy') {
     const st = shopStock();
     const bought = G.shopBought[stockKey()] || [];
     const worth = st.specials.filter((id) => !bought.includes(id) && worthBuying(id)).sort((a, b) => gearScore(b) - gearScore(a));
-    const rest = st.specials.filter((id) => !worth.includes(id));
-    body = `${worth.length ? `<h3 class="sub">WORTH BUYING: STRONGER THAN WHAT YOU HAVE</h3><div class="items">${worth.map((id) => shopRow(id, true, bought)).join('')}</div>` : '<p class="muted" style="font-size:14px">Nothing here beats the gear and moves you already have.</p>'}
-      <h3 class="sub">SUPPLIES</h3><div class="items">${st.basics.map((id) => shopRow(id, false, bought)).join('')}</div>
-      ${rest.length ? `<h3 class="sub">OTHER SPECIALS: ONE OF EACH</h3><div class="items">${rest.map((id) => shopRow(id, true, bought)).join('')}</div>` : ''}
-      <button class="btn gold" data-act="restock" ${G.tokens < restockCost() ? 'disabled' : ''}>RESTOCK SPECIALS NOW · ${restockCost()} TOKENS</button>`;
+    const rows = [...st.basics.map((id) => [id, false]), ...st.specials.filter((id) => !worth.includes(id)).map((id) => [id, true])];
+    body = F('worth', 'Upgrades for you', worth.length,
+      worth.length ? worth.map((id) => shopRow(id, true, bought)).join('') : '<p class="note-sm">Nothing here beats the gear and moves you already have.</p>',
+      { color: 'gold', sub: 'Stronger than what you have' })
+      + SHOP_CATS.map(([key, title]) => {
+        const list = rows.filter(([id]) => shopCat(id) === key);
+        if (!list.length) return '';
+        return F(key, title, list.length, list.map(([id, sp]) => shopRow(id, sp, bought)).join(''), { shutByDefault: !['heal', 'mana'].includes(key) });
+      }).join('')
+      + `<button class="btn gold" data-act="restock" ${G.tokens < restockCost() ? 'disabled' : ''}>RESTOCK GEAR AND SCROLLS · ${restockCost()} TOKENS</button>`;
   } else if (shopState.tab === 'gym') {
     const cap = trainCap();
-    body = `<p class="muted" style="font-size:15px">Penny's cousin runs a gym in the back. Every session makes you stronger for good. Each one costs more than the last, and on Floor ${G.floor} you can do up to ${cap} sessions of each.</p>
+    body = `<p class="shop-info">Penny's cousin runs a gym in the back. Every session makes you stronger for good. Each one costs more than the last. On Floor ${G.floor} you can do up to ${cap} sessions of each.</p>
       <div class="items">${Object.entries(TRAIN).map(([k, t]) => {
         const n = (G.train && G.train[k]) || 0, c = trainCost(k), full = n >= cap;
-        return `<div class="item"><div class="txt"><span class="nm" style="color:var(--gold)">${esc(t.name)} <span class="have">${n}/${cap}</span></span><span class="ds">${esc(t.desc)} for good. You have +${n * t.gain} ${STAT_NAMES[k]} from training.</span></div>
+        return `<div class="item srow one"><div class="txt"><span class="nm" style="color:var(--gold)">${esc(t.name)} <span class="have">${n}/${cap}</span></span><span class="ds">${esc(t.desc)} for good. You have +${n * t.gain} ${STAT_NAMES[k]} from training.</span></div>
           <button class="act gold" data-act="train" data-id="${k}" ${full || G.tokens < c ? 'disabled' : ''}>${full ? 'Max for now' : c + ' tokens'}</button></div>`;
       }).join('')}</div>`;
   } else {
-    const ids = G.order.filter((id) => sellableCount(id) > 0).sort((a, b) => isJunk(b) - isJunk(a));
+    const ids = G.order.filter((id) => sellableCount(id) > 0);
     const junk = junkList().filter((id) => sellableCount(id) > 0);
     const jv = junk.reduce((a, id) => a + sellableCount(id) * sellPrice(id), 0);
     const boundIds = G.order.filter((id) => boundCount(id) > 0 && !ITEMS[id].nosell);
+    const sellRow = (id) => {
+      const it = ITEMS[id];
+      return `<div class="item srow"><img src="${icon(id)}" alt="">
+        <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(it.name)} x${count(id)}${junk.includes(id) ? ' <span class="junk-tag">JUNK</span>' : ''}</span><span class="ds">${isGear(id) ? esc(SLOT_NAMES[it.type] + ': ' + statText(id)) : esc(it.desc)}${boundCount(id) ? ` <b style="color:var(--pink)">${boundCount(id)} from shop boxes can't be sold.</b>` : ''}</span></div>
+        <div class="sbtns"><button class="act" data-act="sell" data-id="${id}" data-n="1">Sell 1 · ${sellPrice(id)}</button>${sellableCount(id) > 1 ? `<button class="act" data-act="sell" data-id="${id}" data-n="all">Sell all ${sellableCount(id)} · ${sellPrice(id) * sellableCount(id)}</button>` : ''}</div></div>`;
+    };
+    // Same groups as the Bag, so things are where you expect them. Junk comes first.
+    const order = [10, ...GROUPS.map((_, i) => i).filter((i) => i !== 10)];
+    const groups = order.map((g) => {
+      const list = ids.filter((id) => itemGroup(id) === g);
+      if (!list.length) return '';
+      return F('sell' + g, GROUPS[g], list.length, list.map(sellRow).join(''), { color: g === 10 ? 'gold' : '', shutByDefault: g !== 10 });
+    }).join('');
     body = `${junk.length ? `<button class="btn gold" data-act="selljunk">SELL ALL JUNK: ${junk.reduce((a, id) => a + sellableCount(id), 0)} ITEMS FOR ${jv} TOKENS</button>` : ''}
-      ${boundIds.length ? `<p class="muted" style="font-size:14px"><b style="color:var(--pink)">Penny won't buy back what came out of her own boxes.</b> You have ${boundIds.reduce((a, id) => a + boundCount(id), 0)} shop-box items. Use them, craft with them, break gear down into Scrap at the bench, or shred useless scrolls into Scrap from your bag.</p>` : ''}
-      <p class="muted" style="font-size:14px">Junk is any gear weaker than what you wear in that slot, spare copies of gear you already wear, and scrolls for moves you know. Crafting materials are never sold as junk.</p>
-      <p class="muted" style="font-size:14px">Gear you are wearing is not listed. Junk is also used for crafting at the bench.</p>
-      <div class="items">${ids.map((id) => {
-        const it = ITEMS[id];
-        return `<div class="item"><img src="${icon(id)}" alt="">
-          <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(it.name)} x${count(id)}${junk.includes(id) ? ' <span class="junk-tag">JUNK</span>' : ''}</span><span class="ds">${isGear(id) ? esc(SLOT_NAMES[it.type] + ': ' + statText(id)) : esc(it.desc)}${boundCount(id) ? ` <b style="color:var(--pink)">${boundCount(id)} from shop boxes can't be sold.</b>` : ''}</span></div>
-          <div class="craft-btns"><button class="act" data-act="sell" data-id="${id}" data-n="1">Sell 1 · ${sellPrice(id)}</button>${sellableCount(id) > 1 ? `<button class="act" data-act="sell" data-id="${id}" data-n="all">All ${sellableCount(id)} · ${sellPrice(id) * sellableCount(id)}</button>` : ''}</div></div>`;
-      }).join('') || '<p class="muted">Nothing to sell.</p>'}</div>`;
+      <p class="shop-info">Junk is gear weaker than what you wear in that slot, spare copies of gear you wear, and scrolls for moves you know. Crafting materials are never junk. Gear you are wearing is not listed.${boundIds.length ? ` <b style="color:var(--pink)">Penny won't buy back the ${boundIds.reduce((a, id) => a + boundCount(id), 0)} items that came out of her own boxes.</b> Use them, craft with them, or break gear down into Scrap at the bench.` : ''}</p>
+      ${groups || '<p class="muted">Nothing to sell.</p>'}`;
   }
   showOverlay(`
     <div class="row-between"><h2>PENNY'S PAWN</h2><span class="tok">${G.tokens} tokens</span></div>
-    <div class="bookie"><img src="${sprite('shop').toDataURL()}" alt=""><p><b style="color:var(--gold)">PENNY:</b> ${esc(shopState.line)}</p></div>
-    <p class="muted" style="font-size:15px">Penny restocks every time you level up or reach a new floor. Prices go up on deeper floors, and her better shelves open deeper down. ${next ? `New supplies and scrolls unlock on Floor ${next.floor} at level ${next.lvl}.` : 'Every shelf is open.'}</p>
+    <div class="penny-mini"><img src="${sprite('shop').toDataURL()}" alt=""><p><b style="color:var(--gold)">PENNY:</b> ${esc(shopState.line)}</p></div>
     <div class="tabs"><button class="tab ${shopState.tab === 'buy' ? 'on' : ''}" data-act="shoptab" data-id="buy">Buy</button><button class="tab ${shopState.tab === 'sell' ? 'on' : ''}" data-act="shoptab" data-id="sell">Sell</button><button class="tab ${shopState.tab === 'gym' ? 'on' : ''}" data-act="shoptab" data-id="gym">Gym</button><button class="tab" data-act="shopgear">My gear</button></div>
+    ${shopState.tab === 'buy' ? `<p class="shop-info">Penny restocks when you level up or reach a new floor. ${next ? `More supplies and scrolls unlock on Floor ${next.floor} at level ${next.lvl}.` : 'Every shelf is open.'} Tap a shelf to open it.</p>` : ''}
     ${body}
     ${extra ? `<div class="shop-toast">${extra}</div>` : ''}
     <button class="btn grey" data-act="shopclose" style="position:sticky; bottom:0">LEAVE SHOP</button>`);
@@ -3611,7 +3657,23 @@ function questStat(q) {
     default: return 0;
   }
 }
-function questProg(q) { return Math.min(q.n, q.st ? questStat(q) : (questState().a[q.id] || 0)); }
+// Owner: a quest you already did before picking it up still counts. Every quest event is tallied per floor in
+// G.q.h[floor][key] whether or not a quest is active, and a count quest uses the higher of its own count and that tally.
+function questKey(ev, mob, ctype) { return mob ? `${ev}|m:${mob}` : ctype ? `${ev}|c:${ctype}` : ev; }
+function questHist(q) { const h = (questState().h || {})[q.floor] || {}; return h[questKey(q.ev, q.mob, q.ctype)] || 0; }
+// Saves from before the tally: count the mobs already beaten on this floor, so kill quests picked up now still credit them.
+function seedQuestHist() {
+  const st = questState();
+  if (st.h) return;
+  const h = (st.h = {})[G.floor] = {};
+  for (const m of FL.mobs || []) {
+    if (!G.killed.includes(m.id)) continue;
+    const n = (m.members && m.members.length) || 1;
+    h.kill = (h.kill || 0) + n;
+    for (const mm of m.members || [m]) { const k = questKey('kill', mm.type); h[k] = (h[k] || 0) + 1; }
+  }
+}
+function questProg(q) { return Math.min(q.n, q.st ? questStat(q) : Math.max(questState().a[q.id] || 0, questHist(q))); }
 function questActive(q) { return q.id in questState().a; }
 function questReady(q) { return questActive(q) && questProg(q) >= q.n; }
 function questDoneIds() { return questState().d; }
@@ -3646,13 +3708,16 @@ function rewardText(rw) {
 function questEvent(ev, n = 1, info = {}) {
   if (!G || !G.q) return;
   const st = G.q;
-  for (const q of activeQuests()) {
-    if (q.ev !== ev || (q.mob && q.mob !== info.mob) || (q.ctype && q.ctype !== info.ctype)) continue;
-    const before = st.a[q.id] || 0;
-    if (before >= q.n) continue;
-    st.a[q.id] = Math.min(q.n, before + n);
-    if (st.a[q.id] < q.n) say(`<span class="quest">Quest: ${esc(q.name)} ${st.a[q.id]}/${q.n}</span>`);
-  }
+  const hit = activeQuests().filter((q) => q.ev === ev && (!q.mob || q.mob === info.mob) && (!q.ctype || q.ctype === info.ctype));
+  const was = hit.map(questProg);
+  // Tally everything on this floor, so quests picked up later still count it.
+  const h = ((st.h = st.h || {})[G.floor] = st.h[G.floor] || {});
+  for (const k of new Set([ev, questKey(ev, info.mob), questKey(ev, null, info.ctype)])) h[k] = (h[k] || 0) + n;
+  hit.forEach((q, i) => {
+    st.a[q.id] = Math.min(q.n, (st.a[q.id] || 0) + n);
+    const now = questProg(q);
+    if (now > was[i] && now < q.n) say(`<span class="quest">Quest: ${esc(q.name)} ${now}/${q.n}</span>`);
+  });
   questCheck();
 }
 // Announce quests that just became ready to turn in (once each).
@@ -3737,15 +3802,24 @@ function openQuestGiver(g) {
   qTalk = { g, note: '' };
   renderQuestGiver();
 }
+function rewardChips(rw) {
+  return `<div class="qrw"><span class="lbl">Reward</span><span class="rchip xp">+${rw.xp} XP</span><span class="rchip tk">+${rw.tokens} tokens</span>${rw.items.map(([id, n]) => `<span class="rchip" style="color:${RARITY[ITEMS[id].rarity].color}">${esc(ITEMS[id].name)}${n > 1 ? ' x' + n : ''}</span>`).join('')}</div>`;
+}
+// One quest as a card. btn: 'accept' (new, shows what they said), 'turnin', 'drop' (quest log), or '' (no button).
 function questRowHtml(q, btn) {
-  const rw = questReward(q);
   const giver = questGiverOf(q);
-  return `<div class="item quest-row"><img src="${q.st === 'boss' ? icon('box_gold') : npcSprite(giver.name, giver.colors).toDataURL()}" alt="">
-    <div class="txt"><span class="nm">${esc(q.name)}${q.floor !== G.floor ? ` <span class="muted">(Floor ${q.floor})</span>` : ''}</span>
-    ${btn === 'accept' ? `<span class="ds">"${esc(q.talk)}"</span>` : ''}
-    <span class="need"><span class="${questProg(q) >= q.n ? 'ok' : ''}">${esc(q.goal)}${btn === 'accept' ? '' : ` · ${questProg(q)}/${q.n}`}</span></span>
-    <span class="ds"><b style="color:var(--gold)">Reward:</b> ${esc(rewardText(rw))}</span></div>
-    ${btn === 'accept' ? `<button class="act green" data-act="qaccept" data-id="${q.id}">Accept</button>` : btn === 'turnin' ? `<button class="act gold" data-act="qturn" data-id="${q.id}">Turn in</button>` : ''}</div>`;
+  const p = questProg(q), ready = btn !== 'accept' && p >= q.n;
+  const img = q.st === 'boss' ? icon('box_gold') : npcSprite(giver.name, giver.colors).toDataURL();
+  return `<div class="qcard ${ready ? 'ready' : ''}">
+    <div class="qtop"><img src="${img}" alt=""><span class="qname">${esc(q.name)}<small>${esc(giver.name)}${q.floor !== G.floor ? ` · Floor ${q.floor}` : ` · Stage ${q.ch}`}</small></span>${btn === 'accept' ? '' : `<span class="qnum">${ready ? 'DONE' : `${p}/${q.n}`}</span>`}</div>
+    ${btn === 'accept' ? `<span class="qtalk">"${esc(q.talk)}"</span>` : ''}
+    <span class="qgoal">${esc(q.goal)}${btn === 'accept' && p > 0 ? ` <span class="ok" style="color:var(--green)">(${p >= q.n ? 'already done!' : `${p}/${q.n} done already`})</span>` : ''}</span>
+    ${btn === 'accept' ? '' : `<div class="qbar"><div style="width:${Math.round(100 * p / q.n)}%"></div></div>`}
+    ${btn === 'drop' && !ready ? `<span class="qtip">${esc(q.tip)}</span>` : ''}
+    ${rewardChips(questReward(q))}
+    ${btn === 'accept' ? `<div class="qact"><button class="act green" data-act="qaccept" data-id="${q.id}">Accept</button></div>`
+    : btn === 'turnin' ? `<div class="qact"><button class="act gold" data-act="qturn" data-id="${q.id}">Turn in</button></div>`
+    : btn === 'drop' && !ready ? `<div class="qact"><button class="act grey small" data-act="qdrop" data-id="${q.id}">Drop</button></div>` : ''}</div>`;
 }
 function renderQuestGiver() {
   const g = qTalk.g;
@@ -3759,9 +3833,9 @@ function renderQuestGiver() {
     <div class="row-between"><h2>${g.board ? 'JOB BOARD' : esc(npc.name).toUpperCase()}</h2><span class="muted" style="font-size:14px">Floor ${G.floor} quests ${floorQuests().filter((q) => questDoneIds().includes(q.id)).length}/${floorQuests().length}</span></div>
     <div class="bookie quest-npc"><img src="${face.toDataURL()}" alt=""><p><b style="color:var(--gold)">${g.board ? `${esc(npc.name)}'s notes` : `${esc(npc.name)}, ${esc(npc.title)}`}:</b> ${esc(line)}</p></div>
     ${qTalk.note}
-    ${ready.length ? `<div class="item-group">Ready to turn in</div><div class="items">${ready.map((q) => questRowHtml(q, 'turnin')).join('')}</div>` : ''}
-    ${offer.length ? `<div class="item-group">New quests</div>${offer.length > 1 ? `<button class="btn green" data-act="qacceptall">ACCEPT ALL ${offer.length}</button>` : ''}<div class="items">${offer.map((q) => questRowHtml(q, 'accept')).join('')}</div>` : ''}
-    ${mine.length ? `<div class="item-group">In progress</div><div class="items">${mine.map((q) => questRowHtml(q, '')).join('')}</div>` : ''}
+    ${ready.length ? foldSec('qg_ready', 'Ready to turn in', ready.length, ready.map((q) => questRowHtml(q, 'turnin')).join(''), { color: 'gold', screen: 'qgiver' }) : ''}
+    ${offer.length ? foldSec('qg_new', 'New quests', offer.length, `${offer.length > 1 ? `<button class="btn green" data-act="qacceptall">ACCEPT ALL ${offer.length}</button>` : ''}${offer.map((q) => questRowHtml(q, 'accept')).join('')}`, { color: 'green', screen: 'qgiver' }) : ''}
+    ${mine.length ? foldSec('qg_mine', 'In progress', mine.length, mine.map((q) => questRowHtml(q, '')).join(''), { screen: 'qgiver' }) : ''}
     ${!ready.length && !offer.length && !mine.length ? `<p class="muted">Nothing new right now. ${g.stage < 3 ? 'More quests wait in the next stage\'s safe room.' : 'Go finish those bosses.'}</p>` : ''}
     <button class="btn grey" data-act="qclose" style="position:sticky; bottom:0">LEAVE</button>`);
 }
@@ -3778,27 +3852,27 @@ function renderQuestLog(extra = '') {
   const ready = act.filter(questReady);
   const going = act.filter((q) => !questReady(q));
   const fq = floorQuests();
+  const done = fq.filter((q) => st.d.includes(q.id));
   const npcs = QUEST_NPCS[G.floor] || [];
-  const chapters = npcs.map((n, i) => {
-    const list = fq.filter((q) => q.ch === i + 1);
-    const done = list.filter((q) => st.d.includes(q.id)).length;
-    const fresh = list.filter((q) => !(q.id in st.a) && !st.d.includes(q.id)).length;
-    return `<div class="item"><img src="${npcSprite(n.name, n.colors).toDataURL()}" alt=""><div class="txt"><span class="nm">${esc(n.name)} <span class="muted" style="font-weight:400">${esc(n.title)}</span></span>
-      <span class="ds">Stage ${i + 1} safe room · ${done}/${list.length} done${fresh ? ` · <b style="color:var(--gold)">${fresh} new</b>` : ''}</span></div></div>`;
+  const F = (key, title, n, inner, o = {}) => foldSec('ql_' + key, title, n, inner, { ...o, screen: 'qlog' });
+  // Quests nobody has given you yet, under the person who hands them out.
+  const fresh = fq.filter((q) => !(q.id in st.a) && !st.d.includes(q.id));
+  const freshHtml = npcs.map((n, i) => {
+    const list = fresh.filter((q) => q.ch === i + 1);
+    if (!list.length) return '';
+    return `<div class="qgiver"><b>${esc(n.name)}</b>, ${esc(n.title)} · Stage ${i + 1} safe room</div>`
+      + list.map((q) => { const p = questProg(q); return `<div class="qdone"><span class="ck" style="color:var(--gold)">!</span><span>${esc(q.name)}</span><span class="who">${p >= q.n ? '<b style="color:var(--green)">already done</b>' : p ? `${p}/${q.n} done` : esc(q.goal)}</span></div>`; }).join('');
   }).join('');
-  const goingRow = (q) => `<div class="item quest-row"><div class="txt"><span class="nm">${esc(q.name)}${q.floor !== G.floor ? ` <span class="muted">(Floor ${q.floor})</span>` : ''}</span>
-      <span class="need">${esc(q.goal)} · <b>${questProg(q)}/${q.n}</b></span>
-      <div class="qbar"><div style="width:${Math.round(100 * questProg(q) / q.n)}%"></div></div>
-      <span class="ds">${esc(q.tip)}</span>
-      <span class="ds">From ${esc(questGiverOf(q).name)} · Reward: ${esc(rewardText(questReward(q)))}</span></div>
-      <button class="act grey" data-act="qdrop" data-id="${q.id}">Drop</button></div>`;
+  const doneHtml = done.map((q) => `<div class="qdone"><span class="ck">✓</span><span>${esc(q.name)}</span><span class="who">${esc(questGiverOf(q).name)}</span></div>`).join('');
   showOverlay(`
-    <div class="row-between"><h2>QUESTS</h2><span class="muted" style="font-size:14px">Floor ${G.floor}: ${fq.filter((q) => st.d.includes(q.id)).length}/${fq.length} done</span></div>
+    <div class="row-between"><h2>QUESTS</h2><span class="muted" style="font-size:14px">Floor ${G.floor}</span></div>
+    ${fq.length ? `<div class="qfloor"><span>${done.length}/${fq.length} done</span><div class="qbar"><div style="width:${Math.round(100 * done.length / fq.length)}%"></div></div></div>` : ''}
     ${extra}
     ${FL.tutorial || !fq.length ? '<p class="muted">No quests here.</p>' : ''}
-    ${ready.length ? `<div class="item-group">Ready to turn in</div><p class="muted" style="font-size:14px;margin:0">Turn these in with any quest giver or job board in a safe room.</p><div class="items">${ready.map((q) => questRowHtml(q, '')).join('')}</div>` : ''}
-    ${going.length ? `<div class="item-group">In progress</div><div class="items">${going.map(goingRow).join('')}</div>` : `<p class="muted">${ready.length ? '' : 'No quests in progress. Look for a gold ! over someone in a safe room.'}</p>`}
-    ${chapters ? `<div class="item-group">Quest givers on this floor</div><div class="items">${chapters}</div>` : ''}
+    ${ready.length ? F('ready', 'Ready to turn in', ready.length, `<p class="note-sm">Turn these in with any quest giver or job board in a safe room.</p>${ready.map((q) => questRowHtml(q, 'drop')).join('')}`, { color: 'gold' }) : ''}
+    ${F('going', 'In progress', going.length, going.length ? going.map((q) => questRowHtml(q, 'drop')).join('') : `<p class="note-sm">${ready.length ? 'Nothing else in progress.' : 'No quests in progress. Look for a gold ! over someone in a safe room.'}</p>`)}
+    ${fresh.length ? F('fresh', 'Not picked up yet', fresh.length, freshHtml, { shutByDefault: true, sub: 'Talk to these people in safe rooms' }) : ''}
+    ${done.length ? F('done', 'Completed', done.length, doneHtml, { color: 'green', shutByDefault: true }) : ''}
     <button class="btn grey" data-act="qlogclose" style="position:sticky; bottom:0">CLOSE</button>`);
 }
 
