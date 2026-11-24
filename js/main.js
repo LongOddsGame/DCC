@@ -959,6 +959,46 @@ function refundOverCap() {
 // Breaking down gear gives Scrap by rarity. Equipped copies are never broken down.
 const SCRAP_YIELD = { common: 1, rusty: 2, silver: 3, gold: 5, patron: 8 };
 function scrapFor(id) { return (SCRAP_YIELD[ITEMS[id].rarity] || 1) + upgLevel(id); }
+const DUST_YIELD = { silver: 1, gold: 2, patron: 3 };
+// Move upgrades (owner request): when better gear replaces an upgraded piece, break the old piece down and its
+// upgrade level (and enchantment) moves onto the new piece of the same slot. Upgrades belong to every copy
+// of an item, so this is only offered when none of the old copies are being worn, and it breaks them all.
+function canMoveFrom(id) { return isGear(id) && count(id) > 0 && !isEquipped(id) && (upgLevel(id) > 0 || !!enchOf(id)); }
+function moveTargets(from) {
+  const t = ITEMS[from].type, lvl = Math.min(upgLevel(from), upgCap());
+  return G.order.filter((id) => id !== from && isGear(id) && count(id) > 0 && ITEMS[id].type === t && (upgLevel(id) < lvl || (enchOf(from) && !enchOf(id))))
+    .sort((a, b) => (isEquipped(b) - isEquipped(a)) || gearScore(b) - gearScore(a));
+}
+// What moving would do: the new level, whether the enchantment comes along, and the Scrap you still get.
+function movePlan(from, to) {
+  const lvl = Math.min(upgLevel(from), upgCap()), old = upgLevel(to);
+  const newLvl = Math.max(old, lvl);
+  const ench = !!enchOf(from) && !enchOf(to);
+  const n = count(from);
+  // The old piece still breaks down for its base Scrap and Dust. Levels that move don't also turn into Scrap;
+  // levels that can't move (the new piece already had them) give 1 Scrap each, like a normal break down.
+  const scrap = (SCRAP_YIELD[ITEMS[from].rarity] || 1) * n + Math.max(0, upgLevel(from) - (newLvl - old));
+  const dust = (DUST_YIELD[ITEMS[from].rarity] || 0) * n;
+  return { lvl: newLvl, gain: newLvl - old, ench, n, scrap, dust };
+}
+function moveUpgrades(from, to) {
+  if (!canMoveFrom(from) || !moveTargets(from).includes(to)) return null;
+  const p = movePlan(from, to);
+  const before = stats();
+  G.upg = G.upg || {};
+  if (p.gain > 0) G.upg[to] = p.lvl;
+  if (p.ench) { G.ench = G.ench || {}; G.ench[to] = { ...G.ench[from] }; }
+  delete G.upg[from];
+  if (G.ench) delete G.ench[from];
+  removeItem(from, p.n);
+  if (p.scrap) addItem('j_scrap', p.scrap, true);
+  if (p.dust) addItem('j_dust', p.dust, true);
+  questEvent('salvage', p.n);
+  const s2 = stats();
+  G.hp = Math.min(s2.maxHp, G.hp + Math.max(0, s2.maxHp - before.maxHp));
+  G.mp = Math.min(s2.maxMp, G.mp + Math.max(0, s2.maxMp - before.maxMp));
+  return p;
+}
 function itemName(id) { const l = isGear(id) ? upgLevel(id) : 0; return ITEMS[id].name + (l ? ' +' + l : ''); }
 function statText(id) {
   const parts = Object.entries(gearStats(id)).map(([k, v]) => (v > 0 ? '+' : '') + v + ' ' + STAT_NAMES[k]);
@@ -995,11 +1035,13 @@ function gearDescHtml(id) { return `${esc(SLOT_NAMES[ITEMS[id].type])}: ${esc(st
 
 function equipItem(id, slot) {
   const before = stats();
+  const old = G.equip[slot];
   G.equip[slot] = id;
   const s = stats();
   G.hp = Math.min(s.maxHp, G.hp + Math.max(0, s.maxHp - before.maxHp));
   G.mp = Math.min(s.maxMp, G.mp + Math.max(0, s.maxMp - before.maxMp));
   if (id) say(`Equipped <span class="loot">${esc(ITEMS[id].name)}</span>.`);
+  if (id && old && old !== id && canMoveFrom(old) && moveTargets(old).includes(id)) say(`Tip: your old ${esc(itemName(old))} can pass its upgrades to this. Workbench, Break down tab, Move.`);
   updateHud();
 }
 function equipBest() {
@@ -1532,7 +1574,34 @@ Object.assign(overlayHandlers, {
   },
 });
 // Break down: turn spare gear (including shop-box gear you can't sell) into Scrap for upgrades.
+let movePick = null;
+function renderMovePick(extra = '') {
+  const from = movePick, it = ITEMS[from], cur = enchOf(from);
+  const rows = moveTargets(from).map((id) => {
+    const p = movePlan(from, id), t = ITEMS[id];
+    const what = [p.gain > 0 ? `<span class="ok">${upgLevel(id) ? `+${upgLevel(id)} ➜ ` : ''}+${p.lvl}</span>` : '', p.ench ? `<span class="ok">✦ ${esc(ENCHANTS[cur.e].name)}</span>` : ''].filter(Boolean).join(' and ');
+    return `<div class="item ${isEquipped(id) ? 'on' : ''}"><img src="${icon(id)}" alt="">
+      <div class="txt"><span class="nm" style="color:${RARITY[t.rarity].color}">${esc(itemName(id))}${isEquipped(id) ? ' <span class="equipped">EQUIPPED</span>' : ''}</span>
+      <span class="ds">${esc(statText(id))}</span>
+      <span class="need">Gets ${what}</span></div>
+      <button class="act gold" data-act="movego" data-id="${id}">Move</button></div>`;
+  }).join('') || `<p class="muted">You have no other ${esc(SLOT_NAMES[it.type]).toLowerCase()} gear that would gain from this.</p>`;
+  const p0 = movePlan(from, from);
+  showOverlay(`
+    <div class="row-between"><h2>WORKBENCH</h2><span class="tok">${count('j_scrap')} Scrap</span></div>
+    ${benchTabs()}
+    <div class="item on"><img src="${icon(from)}" alt=""><div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(from))}${count(from) > 1 ? ' x' + count(from) : ''}</span>
+      <span class="ds">${esc(SLOT_NAMES[it.type])}: ${esc(statText(from))}</span></div></div>
+    <p class="muted" style="font-size:15px">Pick the gear that gets this item's upgrades${cur ? ' and enchantment' : ''}. ${count(from) > 1 ? `All ${count(from)} copies` : 'The old piece'} will be broken down for ${p0.n * (SCRAP_YIELD[it.rarity] || 1)} Scrap${p0.dust ? ` and ${p0.dust} Glow Dust` : ''}. Upgrades go up to +${upgCap()} on Floor ${G.floor}. An enchantment only moves to gear that has none.</p>
+    <div class="items">${rows}</div>
+    ${extra ? `<div class="shop-toast">${extra}</div>` : ''}
+    <button class="btn grey" data-act="moveback">BACK</button>
+    <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
+  overlay.scrollTop = 0;
+}
 function renderSalvage(extra = '') {
+  if (movePick && canMoveFrom(movePick)) return renderMovePick(extra);
+  movePick = null;
   const scroll = overlay.hidden ? 0 : overlay.scrollTop;
   const ids = G.order.filter((id) => isGear(id) && spareCopies(id) > 0).sort((a, b) => (boundCount(b) > 0) - (boundCount(a) > 0) || isJunk(b) - isJunk(a) || gearScore(a) - gearScore(b));
   const rows = ids.map((id) => {
@@ -1540,14 +1609,14 @@ function renderSalvage(extra = '') {
     return `<div class="item"><img src="${icon(id)}" alt="">
       <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))} x${n}${isJunk(id) ? ' <span class="junk-tag">JUNK</span>' : ''}</span>
       <span class="ds">${esc(SLOT_NAMES[it.type])}: ${esc(statText(id))}${boundCount(id) ? ` <b style="color:var(--pink)">${Math.min(n, boundCount(id))} from shop boxes</b>` : ''}</span>
-      <span class="need">Gives <span class="ok">${y} Scrap</span> each</span></div>
-      <div class="craft-btns"><button class="act purple" data-act="salvage" data-id="${id}" data-n="1">Break 1</button>
+      <span class="need">Gives <span class="ok">${y} Scrap</span> each${canMoveFrom(id) && moveTargets(id).length ? ` · or <span class="ok">move its ${[upgLevel(id) ? '+' + upgLevel(id) : '', enchOf(id) ? 'enchantment' : ''].filter(Boolean).join(' and ')}</span> to newer gear` : ''}</span></div>
+      <div class="craft-btns">${canMoveFrom(id) && moveTargets(id).length ? `<button class="act gold" data-act="movepick" data-id="${id}">Move ${upgLevel(id) ? '+' + upgLevel(id) : '✦'}</button>` : ''}<button class="act purple" data-act="salvage" data-id="${id}" data-n="1">Break 1</button>
       ${n > 1 ? `<button class="act purple" data-act="salvage" data-id="${id}" data-n="all">All ${n} · ${y * n}</button>` : ''}</div></div>`;
   }).join('') || '<p class="muted">No spare gear to break down. Gear you are wearing is never listed.</p>';
   showOverlay(`
     <div class="row-between"><h2>WORKBENCH</h2><span class="tok">${count('j_scrap')} Scrap</span></div>
     ${benchTabs()}
-    <p class="muted" style="font-size:15px">Break spare gear down into <b style="color:var(--gold)">Scrap</b>. On the Upgrade tab, Scrap fills in for up to half of the materials an upgrade needs. Rarer gear gives more: common 1, rusty 2, silver 3, gold 5, patron 8, plus 1 per upgrade level. Silver and better gear also gives <b style="color:var(--cyan)">Glow Dust</b> for enchanting.</p>
+    <p class="muted" style="font-size:15px">Break spare gear down into <b style="color:var(--gold)">Scrap</b>. On the Upgrade tab, Scrap fills in for up to half of the materials an upgrade needs. Rarer gear gives more: common 1, rusty 2, silver 3, gold 5, patron 8, plus 1 per upgrade level. Silver and better gear also gives <b style="color:var(--cyan)">Glow Dust</b> for enchanting. Replaced an upgraded piece? Tap <b style="color:var(--gold)">Move</b> to break it down and pass its upgrades and enchantment to your new gear of the same kind.</p>
     <div class="items">${rows}</div>
     ${extra ? `<div class="shop-toast">${extra}</div>` : ''}
     <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
@@ -1598,7 +1667,21 @@ Object.assign(overlayHandlers, {
     updateHud();
     renderBench(`<div class="reveal">${equipNowHtml(r.out, 'bench') || `<p class="note good">You made ${esc(ITEMS[r.out].name)}!</p>`}</div>`);
   },
-  benchtab: (_, b) => { benchTab = b.dataset.id; enchPick = null; hideOverlay(); renderBench(); },
+  movepick: (_, b) => { if (canMoveFrom(b.dataset.id)) { movePick = b.dataset.id; renderSalvage(); } },
+  moveback: () => { movePick = null; renderSalvage(); },
+  movego: (_, b) => {
+    const from = movePick, to = b.dataset.id;
+    const oldName = from && itemName(from);
+    const p = from && moveUpgrades(from, to);
+    if (!p) return;
+    movePick = null;
+    say(`Broke down ${esc(oldName)} and moved its ${[p.gain > 0 ? 'upgrades' : '', p.ench ? 'enchantment' : ''].filter(Boolean).join(' and ')} to <span class="loot">${esc(itemName(to))}</span>.`);
+    bookie(R.pick(['Out with the old, in with the shiny. Recycling is so in this season.', 'Hand-me-down power! The Patrons love a thrifty crawler.', 'Nothing wasted. Except maybe your dignity.']));
+    updateHud();
+    save();
+    renderSalvage(`<p class="note good">${esc(itemName(to))}: ${esc(statText(to))}${p.scrap ? ` · +${p.scrap} Scrap` : ''}${p.dust ? ` · +${p.dust} Glow Dust` : ''}</p>`);
+  },
+  benchtab: (_, b) => { benchTab = b.dataset.id; enchPick = null; movePick = null; hideOverlay(); renderBench(); },
   crafttype: (_, b) => { craftType = b.dataset.id; hideOverlay(); renderBench(); },
   salvage: (_, b) => {
     const id = b.dataset.id;
@@ -1606,7 +1689,7 @@ Object.assign(overlayHandlers, {
     if (!isGear(id) || spare <= 0) return;
     const n = b.dataset.n === 'all' ? spare : 1;
     const y = scrapFor(id) * n;
-    const dust = ({ silver: 1, gold: 2, patron: 3 }[ITEMS[id].rarity] || 0) * n;
+    const dust = (DUST_YIELD[ITEMS[id].rarity] || 0) * n;
     removeItem(id, n);
     addItem('j_scrap', y, true);
     if (dust) addItem('j_dust', dust, true);
