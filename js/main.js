@@ -1807,7 +1807,7 @@ function respawnMobs() {
     return d > 14 && d < 60 && !FL.safeRooms.includes(r);
   });
   let made = 0;
-  for (let tries = 0; tries < 20 && made < 2 && rooms.length; tries++) {
+  for (let tries = 0; tries < 20 && made < 3 && rooms.length; tries++) {
     const r = R.pick(rooms);
     const p = { x: R.int(r.x, r.x + r.w - 1), y: R.int(r.y, r.y + r.h - 1) };
     if (tileAt(FL, p.x, p.y) !== T.FLOOR || objectAt(p.x, p.y) || mobAt(p.x, p.y)) continue;
@@ -3424,7 +3424,7 @@ function loop(now) {
       }
       if (!FL.tutorial) {
         G.respawnT += dt;
-        if (G.respawnT >= 60) { G.respawnT = 0; respawnMobs(); }
+        if (G.respawnT >= 40) { G.respawnT = 0; respawnMobs(); }
       }
       hudTick += dt;
       if (hudTick > 0.5) { hudTick = 0; updateHud(); }
