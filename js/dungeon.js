@@ -238,18 +238,24 @@ export function stageAt(fl, x) {
   return Math.max(0, Math.min(fl.stages.length - 1, Math.floor((x - 1) / (SW + 2))));
 }
 
-// Floor 1, stage 1: the gentle warm-up area.
-export function isEasyStart(floor, room) { return floor === 1 && !!room && room.stage === 0; }
+// Floor 1, stage 1: the gentle warm-up area. Returns 2 for its first section (the first two
+// columns of rooms, where a brand new hero starts), 1 for the rest of stage 1, 0 everywhere else.
+export function isEasyStart(floor, room) {
+  if (floor !== 1 || !room || room.stage !== 0) return 0;
+  return room.col < FIRST_SECTION_COLS ? 2 : 1;
+}
+export const FIRST_SECTION_COLS = 2;
 
 export function makeGroup(rng, types, traitIds, depth, elite, easy = false) {
   const roll = rng.next();
   // Bigger packs than before (owner: more mobs). Lone mobs get rare near the bosses.
   // The easy start area uses packs of 1 (60%) or 2 (40%) only.
-  const size = easy ? (roll < 0.6 ? 1 : 2) : roll < 0.3 - depth * 0.15 ? 1 : roll < 0.72 - depth * 0.12 ? 2 : 3;
+  // The first section (easy 2) is mostly lone mobs with no traits (owner: a blob and a bat together killed new players).
+  const size = easy === 2 ? (roll < 0.85 ? 1 : 2) : easy ? (roll < 0.6 ? 1 : 2) : roll < 0.3 - depth * 0.15 ? 1 : roll < 0.72 - depth * 0.12 ? 2 : 3;
   const members = [];
   for (let m = 0; m < size; m++) {
     const tr = rng.next() - depth * 0.25 + (easy ? 0.2 : 0); // fewer traits in the easy start
-    const n = elite && m === 0 ? 3 : tr < 0.5 ? 0 : tr < 0.85 ? 1 : 2;
+    const n = easy === 2 ? 0 : elite && m === 0 ? 3 : tr < 0.5 ? 0 : tr < 0.85 ? 1 : 2;
     members.push({ type: rng.pick(types), traits: rng.shuffle(traitIds).slice(0, n), elite: elite && m === 0 });
   }
   return { members, elite };
