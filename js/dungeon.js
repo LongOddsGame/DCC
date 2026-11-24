@@ -130,7 +130,7 @@ export function generateFloor(seed, floor, opts = {}) {
   const inRoom = (r, x, y) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
   const nearDoor = (r, x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => !inRoom(r, x + dx, y + dy) && at(x + dx, y + dy) !== T.WALL);
   const placed = new Set([key(stairs), ...bosses.map(key), key({ x: start.cx, y: start.cy }), ...gates.map(key)]);
-  const place = (r, want) => {
+  const place = (r, want, optional = false) => {
     const ok = (x, y) => inRoom(r, x, y) && !nearDoor(r, x, y) && !placed.has(x + ',' + y);
     let best = ok(want.x, want.y) ? want : null;
     if (!best) {
@@ -140,7 +140,7 @@ export function generateFloor(seed, floor, opts = {}) {
         if (d < bd && ok(xx, yy)) { bd = d; best = { x: xx, y: yy }; }
       }
     }
-    if (!best) best = want;
+    if (!best) { if (optional) return null; best = want; }
     placed.add(best.x + ',' + best.y);
     return best;
   };
@@ -150,6 +150,17 @@ export function generateFloor(seed, floor, opts = {}) {
   const shops = safeRooms.filter((r) => r.w >= 3 && r.h >= 3).map((r) => place(r, { x: r.x + r.w - 1, y: r.y + r.h - 1 }));
   // A bed in every safe room: sleep in it to restore HP and MP for free.
   const beds = safeRooms.map((r) => place(r, { x: r.x, y: r.y + r.h - 1 }));
+  // Quest givers (owner request): the first safe room of each stage has that stage's quest giver,
+  // and the second one has their job board. Placed last and with no random rolls, so older floors keep
+  // the same layout. Skipped if the room has no free spot left.
+  const questGivers = [];
+  const stageSeen = new Set();
+  for (const r of safeRooms) {
+    const board = stageSeen.has(r.stage);
+    stageSeen.add(r.stage);
+    const p = place(r, { x: r.cx, y: r.y + r.h - 1 }, true);
+    if (p) questGivers.push({ x: p.x, y: p.y, stage: r.stage, board });
+  }
 
   const taken = new Set([key(stairs), ...bosses.map(key), key(doc), ...booths.map(key), ...benches.map(key), ...shops.map(key), ...beds.map(key), key({ x: start.cx, y: start.cy }), ...gates.map(key)]);
   const freeSpot = (room) => {
@@ -218,7 +229,7 @@ export function generateFloor(seed, floor, opts = {}) {
   for (let i = 0; i < W * H; i++) if (tiles[i] === T.FLOOR && rng.chance(0.03)) decor[i] = rng.int(1, 3);
 
   const rule = rng.pick(FLOOR_RULES.filter((x) => fd.rules.includes(x.id)));
-  return { floor, mobTypes: types, w: W, h: H, tiles, decor, rooms, stages, gates, start: { x: start.cx, y: start.cy }, stairs, bosses, doc, booths, benches, shops, beds, safeRoom, safeRooms, chests, mobs, rule, far, dist };
+  return { floor, mobTypes: types, w: W, h: H, tiles, decor, rooms, stages, gates, start: { x: start.cx, y: start.cy }, stairs, bosses, doc, booths, benches, shops, beds, questGivers, safeRoom, safeRooms, chests, mobs, rule, far, dist };
 }
 
 // Which stage (0 to 3) a tile is in.
@@ -267,7 +278,7 @@ export function tutorialFloor() {
   const off = { x: -9, y: -9 };
   return {
     w, h, tiles, decor: new Uint8Array(w * h), rooms, start: { x: 2, y: 3 }, stairs: { x: 24, y: 3 }, bosses: [],
-    doc: off, booths: [{ x: 19, y: 1 }], benches: [{ x: 17, y: 5 }], shops: [{ x: 22, y: 5 }], beds: [{ x: 22, y: 1 }], safeRoom: rooms[2], safeRooms: [rooms[2]],
+    doc: off, booths: [{ x: 19, y: 1 }], benches: [{ x: 17, y: 5 }], shops: [{ x: 22, y: 5 }], beds: [{ x: 22, y: 1 }], questGivers: [], safeRoom: rooms[2], safeRooms: [rooms[2]],
     chests: [{ id: 't0', x: 10, y: 2, tier: 'box_silver' }],
     mobs: [{ id: 't1', x: 13, y: 4, members: [{ type: 'rat', traits: ['cowardly'], elite: false, tutorial: true }], elite: false, still: true, depth: 0 }],
     rule: { id: 'tutorial', name: 'Practice', text: 'Nothing here can really hurt you. Probably.' }, tutorial: true, far: 1,

@@ -49,6 +49,7 @@ const MAPS = {
   valet: ['................', '.....kkkkkk.....', '....kRRRRRRk....', '...kkkkkkkkkk...', '....kggggggk....', '....kgrkgrkk....', '....kggggggk....', '....kgkwwkgk....', '...kkRRRRRRkk...', '..kgkRyRRyRkgk..', '..kgkRRRRRRkyyk.', '..kkkRyRRyRkyk..', '....kRRRRRRk....', '....kokkkkok....', '....kok..kok....', '....kkk..kkk....'],
   towtruck: ['................', '.........k......', '........kOk.....', '.......kOk......', '..kkkkkOk.......', '.kyyyykk........', '.kyccyk.kkkk....', '.kycwyk.kOk.....', 'kkyyyykkkkkkkkk.', 'kyyyyyyyyyyyyyk.', 'kyrryyyyyyyyyykk', 'kyyyyyyyyyyyyyyk', 'kkkkkkkkkkkkkkkk', '.kokk.....kokk..', '.kOok.....kOok..', '..kk.......kk...'],
   metermaid: ['....kkkkkkkk....', '...kbbbbbbbbk...', '..kkkkkkkkkkkk..', '....ksssssk.....', '....kckksckk....', '....ksssssk.....', '....ksSRRSk.....', '...kkkssskkk....', '..kbbbbbbbbbk...', '.kbbbyybbbbbbk..', '.ksbbbbbbbbwwwk.', '.ksbbbbbbbbwrwk.', '..kbbbbbbbbwwwk.', '...kbbbkbbbbk...', '...kokk.kkok....', '...kkk...kkk....'],
+  board: ['................', '.kkkkkkkkkkkkkk.', '.kuuuuuuuuuuuuk.', '.kuwwwkuUeeeUuk.', '.kuwoowuUeoeUuk.', '.kuwwwwuUeeeUuk.', '.kuwoowuuuuuuuk.', '.kuwwwwuyyyyyuk.', '.kuuuuuuyokoyuk.', '.kueeeeuyyyyyuk.', '.kueooeuuuuuuuk.', '.kueeeeuuuuuuuk.', '.kkkkkkkkkkkkkk.', '...ko......ok...', '...ko......ok...', '...kk......kk...'],
   drone: ['................', '................', '.kkkk......kkkk.', '..kk........kk..', '...k.kkkkkk.k...', '...kkOOOOOOkk...', '....kOkkkkOk....', '....kOkrrkOk....', '....kOkkkkOk....', '....kOOOOOOk....', '.....kwwwwk.....', '.....kwrrwk.....', '.....kwwwwk.....', '......kkkk......', '................', '................'],
 };
 
@@ -138,6 +139,11 @@ export function heroSprite(race, cls, dir = 'down', frame = 0, sex = 'm') {
 
 export function docSprite() {
   return sprite('hero', { h: '#7a1c2e', b: '#e8dcc0', B: '#fff6e0', o: '#3a6ea5' }, 'doc');
+}
+
+// Quest givers are regular people: the hero sprite repainted with their own colors.
+export function npcSprite(name, colors) {
+  return sprite('hero', colors, 'npc_' + name);
 }
 
 export function boxSprite(id) {
