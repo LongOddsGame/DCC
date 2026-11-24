@@ -1,7 +1,7 @@
 // Long Odds prototype. Game state, map, battles, bag, safe room and screens.
 import { R, makeRng, newSeed } from './rng.js?v=__BUILD_VERSION__';
 import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, GEAR_TYPES, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, FLOORS, LAST_FLOOR, CLASS_SWAP_FLOORS, MINIONS, floorDef, floorSize, baseId, RECIPES, SCHOOL_NAMES, ENCHANTS } from './data.js?v=__BUILD_VERSION__';
-import { generateFloor, tutorialFloor, roomAt, makeGroup, isEasyStart, walkable, tileAt, stageAt, T, key } from './dungeon.js?v=__BUILD_VERSION__';
+import { generateFloor, tutorialFloor, roomAt, makeGroup, isEasyStart, FIRST_SECTION_COLS, walkable, tileAt, stageAt, T, key } from './dungeon.js?v=__BUILD_VERSION__';
 import { sprite, heroSprite, flipped, docSprite, npcSprite, boxSprite, mobSprite, itemIcon, slotIcon } from './sprites.js?v=__BUILD_VERSION__';
 import { QUESTS, QUEST_BY_ID, QUEST_NPCS, QUEST_ACHIEVEMENTS } from './quests.js?v=__BUILD_VERSION__';
 import { SLOT_COUNT, readSlot, writeSlot, deleteSlot, listSlots, exportCode, importCode } from './save.js?v=__BUILD_VERSION__';
@@ -2659,7 +2659,8 @@ function makeEnemy(member, i, depth = 0) {
   const f = fd(), lerp = ([a, b]) => a + (b - a) * Math.max(0, Math.min(1, depth));
   e.hp = Math.round(e.hp * lerp(f.hp)); e.atk = Math.round(e.atk * lerp(f.atk));
   // Floor 1 stage 1 mobs are softer: 25% less HP and attack at the very start, back to normal by the first gate.
-  if (G.floor === 1 && depth < 0.25) { const k = 0.75 + depth; e.hp = Math.max(1, Math.round(e.hp * k)); e.atk = Math.max(1, Math.round(e.atk * k)); }
+  // The first section of stage 1 (where new heroes start) is softer still: 45% less HP and attack.
+  if (G.floor === 1 && depth < 0.25) { const k = depth < FIRST_SECTION_COLS / 24 ? 0.55 : 0.75 + depth; e.hp = Math.max(1, Math.round(e.hp * k)); e.atk = Math.max(1, Math.round(e.atk * k)); }
   e.def = Math.round(e.def * fsize());
   e.xp = Math.round(e.xp * (1 + depth) * fsize());
   e.tokens = [Math.round(e.tokens[0] * fsize()), Math.round(e.tokens[1] * fsize())];
