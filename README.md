@@ -9,6 +9,7 @@ This is the Floor 1 prototype:
 - A new random floor every game: rooms, mobs with random traits, chests, a floor rule, a safe room and the Turnstile King boss.
 - Turn-based battles, loot boxes, potions with side effects, crafting and a bag with no limit.
 - Doc Vance, a medic who remembers what you do and changes how she treats you.
+- Enchanting at the workbench: one enchantment per piece of gear, paid for with Glow Dust. Deeper floors unlock more and make them stronger.
 - Quests: people in the safe rooms (and their job boards) hand out 20 quests per floor that teach the game. Quests 19 and 20 are the bosses. Tap Quests on the map to track them.
 - BOOKIE, the betting AI narrator, with live odds and audience hype.
 - A build number like `1.0.0.20261122.1310` and a Check for updates button on the title screen.

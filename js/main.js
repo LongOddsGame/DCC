@@ -1,6 +1,6 @@
 // Long Odds prototype. Game state, map, battles, bag, safe room and screens.
 import { R, makeRng, newSeed } from './rng.js?v=__BUILD_VERSION__';
-import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, GEAR_TYPES, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, FLOORS, LAST_FLOOR, CLASS_SWAP_FLOORS, MINIONS, floorDef, floorSize, baseId, RECIPES, SCHOOL_NAMES } from './data.js?v=__BUILD_VERSION__';
+import { BASE_STATS, JOBS, PERKS, RACES, CLASSES, ITEMS, LOOT, BOX_TOKENS, RARITY, RARITY_ORDER, SIDE_EFFECTS, MOBS, BOSSES, ATTACKS, MOVES, TRAITS, ACHIEVEMENTS, BOOKIE, GEAR_SLOTS, GEAR_TYPES, SLOT_NAMES, STAT_NAMES, RARITY_PRICE, SHOP_TIERS, FLOORS, LAST_FLOOR, CLASS_SWAP_FLOORS, MINIONS, floorDef, floorSize, baseId, RECIPES, SCHOOL_NAMES, ENCHANTS } from './data.js?v=__BUILD_VERSION__';
 import { generateFloor, tutorialFloor, roomAt, makeGroup, isEasyStart, walkable, tileAt, stageAt, T, key } from './dungeon.js?v=__BUILD_VERSION__';
 import { sprite, heroSprite, flipped, docSprite, npcSprite, boxSprite, mobSprite, itemIcon, slotIcon } from './sprites.js?v=__BUILD_VERSION__';
 import { QUESTS, QUEST_BY_ID, QUEST_NPCS, QUEST_ACHIEVEMENTS } from './quests.js?v=__BUILD_VERSION__';
@@ -887,8 +887,28 @@ function gearStats(id) {
   const it = id && ITEMS[id];
   const o = {};
   if (it) for (const k in STAT_NAMES) if (it[k]) o[k] = it[k] + upgBonus(id, k, upgLevel(id));
+  const en = it && enchOf(id);
+  if (en) for (const [k, v] of Object.entries(enchStats(en))) o[k] = (o[k] || 0) + v;
   return o;
 }
+// ----- Enchanting: one enchantment per item (every copy, like upgrades), saved as G.ench[id] = { e, f } -----
+function enchOf(id) { const x = G && G.ench && G.ench[id]; return x && ENCHANTS[x.e] ? x : null; }
+function enchStats(x) {
+  const d = ENCHANTS[x.e], m = floorSize(x.f || 1), o = {};
+  for (const [k, v] of Object.entries(d.stats)) o[k] = k === 'xpPct' || k === 'cha' ? v : Math.round(v * m);
+  return o;
+}
+function enchDesc(x) {
+  const d = ENCHANTS[x.e];
+  const parts = Object.entries(enchStats(x)).map(([k, v]) => '+' + v + ' ' + STAT_NAMES[k]);
+  if (d.leech) parts.push('melee heals ' + Math.round(d.leech * 100) + '%');
+  return parts.join(', ');
+}
+function enchCost() { const f = Math.max(1, G.floor || 1); return { dust: 1 + f, tokens: Math.round(10 * fsize()) }; }
+function canEnchant() { const c = enchCost(); return count('j_dust') >= c.dust && G.tokens >= c.tokens; }
+function enchantsHere() { return Object.entries(ENCHANTS).filter(([, d]) => d.floor <= Math.max(1, G.floor || 1)); }
+function wornEnchants() { return GEAR_SLOTS.filter((sl) => G.equip[sl] && enchOf(G.equip[sl])); }
+function leechShare() { return wornEnchants().reduce((a, sl) => a + (ENCHANTS[enchOf(G.equip[sl]).e].leech || 0), 0); }
 // ----- Upgrade table: raise a piece of gear up to +5 -----
 const UPG_MAX = 5;
 // Each floor caps how far you can upgrade (owner maxed everything on Floor 1): +2 on Floor 1, +3 on Floor 2...
@@ -948,6 +968,8 @@ function itemName(id) { const l = isGear(id) ? upgLevel(id) : 0; return ITEMS[id
 function statText(id) {
   const parts = Object.entries(gearStats(id)).map(([k, v]) => (v > 0 ? '+' : '') + v + ' ' + STAT_NAMES[k]);
   if (ITEMS[id].hype) parts.push('earns hype');
+  const en = enchOf(id);
+  if (en) parts.push('✦' + ENCHANTS[en.e].name + (ENCHANTS[en.e].leech ? ' (melee heals)' : ''));
   return parts.join(', ');
 }
 // The change to each stat if you swapped this in for what you wear now.
@@ -1373,7 +1395,7 @@ function recipeType(r) {
 let craftType = 'all';
 function openBench() { moveHeld = null; renderBench(); }
 function benchTabs() {
-  return `<div class="tabs"><button class="tab ${benchTab === 'craft' ? 'on' : ''}" data-act="benchtab" data-id="craft">Crafting</button><button class="tab ${benchTab === 'upgrade' ? 'on' : ''}" data-act="benchtab" data-id="upgrade">Upgrade</button><button class="tab ${benchTab === 'salvage' ? 'on' : ''}" data-act="benchtab" data-id="salvage">Break down</button></div>`;
+  return `<div class="tabs"><button class="tab ${benchTab === 'craft' ? 'on' : ''}" data-act="benchtab" data-id="craft">Crafting</button><button class="tab ${benchTab === 'upgrade' ? 'on' : ''}" data-act="benchtab" data-id="upgrade">Upgrade</button><button class="tab ${benchTab === 'enchant' ? 'on' : ''}" data-act="benchtab" data-id="enchant">Enchant</button><button class="tab ${benchTab === 'salvage' ? 'on' : ''}" data-act="benchtab" data-id="salvage">Break down</button></div>`;
 }
 function renderUpgrade(extra = '') {
   const ids = G.order.filter((id) => isGear(id) && count(id) > 0).sort((a, b) => (isEquipped(b) - isEquipped(a)) || gearScore(b) - gearScore(a));
@@ -1405,6 +1427,70 @@ function renderUpgrade(extra = '') {
     <div class="items">${rows}</div>
     <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
 }
+// Enchant tab: pick a piece of gear, then pick an enchantment. A new one replaces the old one.
+let enchPick = null;
+function renderEnchant(extra = '') {
+  const c = enchCost();
+  const costHtml = `<span class="${count('j_dust') >= c.dust ? 'ok' : 'no'}">Glow Dust ${Math.min(count('j_dust'), c.dust)}/${c.dust}</span>, <span class="${G.tokens >= c.tokens ? 'ok' : 'no'}">${c.tokens} tokens</span>`;
+  let body;
+  if (enchPick && isGear(enchPick) && count(enchPick) > 0) {
+    const id = enchPick, it = ITEMS[id], cur = enchOf(id);
+    const opts = enchantsHere().map(([eid, d]) => {
+      const x = { e: eid, f: Math.max(1, G.floor || 1) };
+      const same = cur && cur.e === eid && (cur.f || 1) >= x.f;
+      return `<div class="item"><div class="txt"><span class="nm" style="color:var(--cyan)">✦ ${esc(d.name)}</span><span class="ds">${esc(enchDesc(x))}</span></div>
+        <button class="act purple" data-act="enchant" data-id="${eid}" ${!same && canEnchant() ? '' : 'disabled'}>${same ? 'Has it' : 'Enchant'}</button></div>`;
+    }).join('');
+    const later = Object.values(ENCHANTS).filter((d) => d.floor > Math.max(1, G.floor || 1));
+    body = `<div class="item on"><img src="${icon(id)}" alt=""><div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))}</span>
+      <span class="ds">${esc(SLOT_NAMES[it.type])}: ${esc(statText(id))}</span>
+      <span class="need">${cur ? `Now: <span class="ok">✦ ${esc(ENCHANTS[cur.e].name)} (${esc(enchDesc(cur))})</span>. A new enchantment replaces it.` : 'No enchantment yet.'}</span></div></div>
+      <p class="muted" style="font-size:14px;margin:0">Each costs ${costHtml}.</p>
+      <div class="items">${opts}</div>
+      ${later.length ? `<p class="muted" style="font-size:14px">Deeper floors unlock: ${later.map((d) => `${esc(d.name)} (Floor ${d.floor})`).join(', ')}.</p>` : ''}
+      <button class="btn grey" data-act="enchback">PICK ANOTHER ITEM</button>`;
+  } else {
+    enchPick = null;
+    const ids = G.order.filter((id) => isGear(id) && count(id) > 0).sort((a, b) => (isEquipped(b) - isEquipped(a)) || gearScore(b) - gearScore(a));
+    body = `<div class="items">${ids.map((id) => {
+      const it = ITEMS[id], cur = enchOf(id);
+      return `<div class="item ${isEquipped(id) ? 'on' : ''}"><img src="${icon(id)}" alt="">
+        <div class="txt"><span class="nm" style="color:${RARITY[it.rarity].color}">${esc(itemName(id))}${isEquipped(id) ? ' <span class="equipped">EQUIPPED</span>' : ''}</span>
+        <span class="need">${cur ? `<span class="ok">✦ ${esc(ENCHANTS[cur.e].name)}: ${esc(enchDesc(cur))}</span>` : '<span class="muted">No enchantment</span>'}</span></div>
+        <button class="act purple" data-act="enchpick" data-id="${id}">${cur ? 'Change' : 'Choose'}</button></div>`;
+    }).join('') || '<p class="muted">You have no gear to enchant yet.</p>'}</div>`;
+  }
+  showOverlay(`
+    <div class="row-between"><h2>WORKBENCH</h2><span class="tok">${count('j_dust')} Dust · ${G.tokens} tokens</span></div>
+    ${benchTabs()}
+    ${extra}
+    <p class="muted" style="font-size:15px">Enchant your gear with <b style="color:var(--cyan)">Glow Dust</b> (mobs, boxes, Penny, and breaking down silver or better gear). Each piece holds one enchantment, on every copy you own. Enchantments are stronger on deeper floors, so re-enchant as you go down.</p>
+    ${body}
+    <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
+}
+Object.assign(overlayHandlers, {
+  enchpick: (_, b) => { enchPick = b.dataset.id; renderEnchant(); overlay.scrollTop = 0; },
+  enchback: () => { enchPick = null; renderEnchant(); },
+  enchant: (_, b) => {
+    const id = enchPick, eid = b.dataset.id;
+    if (!id || !ENCHANTS[eid] || ENCHANTS[eid].floor > Math.max(1, G.floor || 1) || !canEnchant()) return;
+    const c = enchCost();
+    const before = stats();
+    removeItem('j_dust', c.dust);
+    G.tokens -= c.tokens;
+    G.ench = G.ench || {};
+    G.ench[id] = { e: eid, f: Math.max(1, G.floor || 1) };
+    const s2 = stats();
+    G.hp = Math.min(s2.maxHp, G.hp + Math.max(0, s2.maxHp - before.maxHp));
+    G.mp = Math.min(s2.maxMp, G.mp + Math.max(0, s2.maxMp - before.maxMp));
+    say(`Enchanted <span class="loot">${esc(itemName(id))}</span> with <b>${esc(ENCHANTS[eid].name)}</b>!`);
+    bookie(R.pick(['Sparkly! The Patrons love a little glitter.', 'Magic on a budget. Very on brand.', 'That thing is glowing now. Probably safe.']));
+    questEvent('enchant');
+    updateHud();
+    save();
+    renderEnchant(`<div class="reveal"><p class="note good">${esc(itemName(id))} is now ✦ ${esc(ENCHANTS[eid].name)}: ${esc(enchDesc(G.ench[id]))}.</p></div>`);
+  },
+});
 // Break down: turn spare gear (including shop-box gear you can't sell) into Scrap for upgrades.
 function renderSalvage(extra = '') {
   const scroll = overlay.hidden ? 0 : overlay.scrollTop;
@@ -1421,7 +1507,7 @@ function renderSalvage(extra = '') {
   showOverlay(`
     <div class="row-between"><h2>WORKBENCH</h2><span class="tok">${count('j_scrap')} Scrap</span></div>
     ${benchTabs()}
-    <p class="muted" style="font-size:15px">Break spare gear down into <b style="color:var(--gold)">Scrap</b>. On the Upgrade tab, Scrap fills in for up to half of the materials an upgrade needs. Rarer gear gives more: common 1, rusty 2, silver 3, gold 5, patron 8, plus 1 per upgrade level.</p>
+    <p class="muted" style="font-size:15px">Break spare gear down into <b style="color:var(--gold)">Scrap</b>. On the Upgrade tab, Scrap fills in for up to half of the materials an upgrade needs. Rarer gear gives more: common 1, rusty 2, silver 3, gold 5, patron 8, plus 1 per upgrade level. Silver and better gear also gives <b style="color:var(--cyan)">Glow Dust</b> for enchanting.</p>
     <div class="items">${rows}</div>
     ${extra ? `<div class="shop-toast">${extra}</div>` : ''}
     <button class="btn grey" data-act="benchclose" style="position:sticky; bottom:0">LEAVE BENCH</button>`);
@@ -1429,6 +1515,7 @@ function renderSalvage(extra = '') {
 }
 function renderBench(extra = '') {
   if (benchTab === 'upgrade') return renderUpgrade(extra);
+  if (benchTab === 'enchant') return renderEnchant(extra);
   if (benchTab === 'salvage') return renderSalvage(extra);
   const sorted = RECIPES.slice().sort((a, b) => (canCraft(b) - canCraft(a)) || ((G.lvl >= b.lvl) - (G.lvl >= a.lvl)) || a.lvl - b.lvl);
   const inType = (t) => sorted.filter((r) => recipeType(r) === t);
@@ -1471,7 +1558,7 @@ Object.assign(overlayHandlers, {
     updateHud();
     renderBench(`<div class="reveal">${equipNowHtml(r.out, 'bench') || `<p class="note good">You made ${esc(ITEMS[r.out].name)}!</p>`}</div>`);
   },
-  benchtab: (_, b) => { benchTab = b.dataset.id; hideOverlay(); renderBench(); },
+  benchtab: (_, b) => { benchTab = b.dataset.id; enchPick = null; hideOverlay(); renderBench(); },
   crafttype: (_, b) => { craftType = b.dataset.id; hideOverlay(); renderBench(); },
   salvage: (_, b) => {
     const id = b.dataset.id;
@@ -1479,10 +1566,12 @@ Object.assign(overlayHandlers, {
     if (!isGear(id) || spare <= 0) return;
     const n = b.dataset.n === 'all' ? spare : 1;
     const y = scrapFor(id) * n;
+    const dust = ({ silver: 1, gold: 2, patron: 3 }[ITEMS[id].rarity] || 0) * n;
     removeItem(id, n);
     addItem('j_scrap', y, true);
+    if (dust) addItem('j_dust', dust, true);
     questEvent('salvage', n);
-    say(`Broke down ${esc(ITEMS[id].name)}${n > 1 ? ' x' + n : ''} into <span class="loot">${y} Scrap</span>.`);
+    say(`Broke down ${esc(ITEMS[id].name)}${n > 1 ? ' x' + n : ''} into <span class="loot">${y} Scrap${dust ? ` and ${dust} Glow Dust` : ''}</span>.`);
     renderSalvage(`<p class="note good">+${y} Scrap (you have ${count('j_scrap')}).</p>`);
   },
   upgrade: (_, b) => {
@@ -2897,6 +2986,8 @@ async function doPlayer(action, targetId) {
     if (crit) dmg *= 1.5;
     const pow = movePow(action);
     hitEnemy(target, dmg * pow, crit ? 'Critical! ' : '');
+    const leech = leechShare();
+    if (leech > 0) { const h = Math.max(1, Math.round(Math.max(1, dmg * pow) * leech)); G.hp = Math.min(s.maxHp, G.hp + h); popHero('+' + h, '#6bbf59'); }
     if (action === 'weapon' && G.race === 'werewolf' && target.alive && R.chance(0.2)) { await sleep(200); burst(tb.cx, tb.cy, 'slash', '#c8334a'); hitEnemy(target, (heroAtk() + R.int(0, 2) - def) * pow, 'You lunge again! '); }
     if (G.race === 'goblin' && R.chance(0.25)) { const t = R.int(1, 3); G.tokens += t; say(`You swipe ${t} tokens.`); }
     gainMoveXp(action, { name: action === 'kick' ? 'Kick' : w ? 'Swing' : 'Punch', mp: 0 });
@@ -3329,7 +3420,7 @@ function victory() {
     if (e.drops.length && R.chance(0.45 + scav)) drops.push(R.pick(e.drops));
     if (R.chance(0.05 + scav)) { const bonus = rollLoot(deep ? 'box_silver' : 'box_rusty').items[0]; if (bonus) for (let n = 0; n < bonus[1]; n++) drops.push(bonus[0]); }
     if (R.chance(0.03 + scav / 2)) drops.push(deep && R.chance(0.3) ? 'box_silver' : 'box_rusty');
-    if (R.chance(0.35 + scav)) drops.push(R.pick(['j_wire', 'j_token', 'j_feather', 'j_jelly', 'j_tail', 'j_scrap']));
+    if (R.chance(0.35 + scav)) drops.push(R.pick(['j_wire', 'j_token', 'j_feather', 'j_jelly', 'j_tail', 'j_scrap', 'j_dust']));
     if (e.elite) { drops.push(deep ? 'box_gold' : 'box_silver', rollLoot(deep ? 'box_gold' : 'box_silver').items[0][0]); achieve('elite'); tag('brave'); }
   }
   const boss = B.enemies.find((e) => e.boss);
@@ -3500,6 +3591,7 @@ function questStat(q) {
     case 'worn': return GEAR_SLOTS.filter((sl) => G.equip[sl]).length;
     case 'upg': return Math.max(0, ...Object.entries(G.upg || {}).filter(([id]) => count(id) > 0).map(([, l]) => l));
     case 'moves': return G.moves.length;
+    case 'enchWorn': return wornEnchants().length;
     case 'spellLvl': return Math.max(0, ...G.moves.map((m) => moveLvl(m)));
     // Bosses: beaten if you are past that floor, or it is down on this floor.
     case 'boss': return G.floor > q.floor || (G.floor === q.floor && G.bossesDead.includes(q.boss)) ? 1 : 0;
@@ -4172,4 +4264,4 @@ Object.assign(overlayHandlers, {
 flushStats();
 
 // Test hook for automated playtests only: open the game with ?debug to reach these from the browser console.
-if (location.search.includes('debug')) window.__LO = { G: () => G, FL: () => FL, B: () => B, startBattle, startBossBattle, doPlayer, stats, shopStock, priceOf, upgCost, canUpgrade, gearStats, save, makeEnemy, newGame, goDownstairs, gainXp, consume, enemyTurn, victory, shiftOdds, minOdds, loadSlot, addHype, openShop, openQuestGiver, openQuestLog, questEvent, enterMap, interact, tryStep, renderQuestGiver };
+if (location.search.includes('debug')) window.__LO = { G: () => G, FL: () => FL, B: () => B, startBattle, startBossBattle, doPlayer, stats, shopStock, priceOf, upgCost, canUpgrade, gearStats, save, makeEnemy, newGame, goDownstairs, gainXp, consume, enemyTurn, victory, shiftOdds, minOdds, loadSlot, addHype, openShop, openQuestGiver, openQuestLog, questEvent, openBench, renderBench, setBenchTab: (t) => { benchTab = t; }, enterMap, interact, tryStep, renderQuestGiver };
